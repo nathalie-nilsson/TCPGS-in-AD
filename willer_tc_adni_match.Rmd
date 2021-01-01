@@ -1,0 +1,107 @@
+---
+title: "Log of 'willer_tc_adni_match' files" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+Cleaned meta-analysis summary data:
+```{r}
+base.file <- "willer_tc_common_snps.txt"
+base.file.woAPOE <- "willer_tc_common_snps_woAPOE.txt"
+```
+
+ADNI genetic data:
+```{r}
+adni.file <- "D:/OneDrive - McGill University/Lab_stuff/Research/Cohort_data/ADNI/Genetic_data/ADNI/ADNI_EUR.bim"
+```
+
+## Libraries
+```{r}
+library(data.table)
+```
+
+## Read data
+**Willer base data**
+```{r}
+# Read base data
+base <- fread(base.file, header = TRUE)[, -c("CHR", "BP"), with = FALSE]
+base
+```
+
+```{r}
+# Base data without APOE
+base.woAPOE <- fread(base.file.woAPOE, header = TRUE)[, -c("CHR", "BP"), with = FALSE]
+base.woAPOE
+```
+
+**PREVENT-AD target data**
+```{r}
+adni <- fread(adni.file, header = FALSE, 
+              col.names = c("CHR", "SNP", "CM", "BP", "REF.adni", "ALT.adni"))
+adni[, POS := list(paste(CHR, BP, sep = ":"))]
+adni
+```
+
+## SNP discrepancies
+```{r}
+# Merge data
+m <- merge(base, adni, by = "POS", suffixes = c(".base", ".adni"))[
+    ][, .(CHR, BP, SNP.base, SNP.adni, REF, REF.adni, ALT, ALT.adni, BETA, P)]
+
+m.woAPOE <- merge(base.woAPOE, adni, by = "POS", suffixes = c(".base", ".adni"))[
+    ][, .(CHR, BP, SNP.base, SNP.adni, REF, REF.adni, ALT, ALT.adni, BETA, P)]
+
+# Calculate number of alleles for each variant
+m$N.alleles <- apply(m[, .(REF,REF.adni,ALT,ALT.adni)], 1, function(x) length(unique(x)))
+m
+
+unique(m[, N.alleles])
+
+# Identify SNPs to be flipped
+correct <- m[REF == REF.adni & ALT == ALT.adni]
+correct
+
+a1a2mix <- m[REF == ALT.adni & ALT == REF.adni]
+a1a2mix
+
+flipped <- m[N.alleles == 4, ]
+flipped
+
+incorrect <- m[N.alleles == 3, 
+               ][, EXCL_REASON := "Multiple alleles"]
+incorrect
+
+nrow(correct) + nrow(a1a2mix) + nrow(flipped) + nrow(incorrect) == nrow(m)
+```
+
+## Write data
+```{r}
+dir.create("willer_tc_adni_match")
+fwrite(m[!SNP.adni %in% incorrect[, SNP.adni] , .(SNP = SNP.adni, REF, P, BETA, ALT)], 
+       file = "willer_tc_adni_match/willer_tc_adni_match.txt", sep = "\t")
+fwrite(m[!SNP.adni %in% incorrect[, SNP.adni], .(SNP = SNP.adni, P)], 
+       file = "willer_tc_adni_match/willer_tc_adni_match_snps_clump.txt", sep = "\t")
+fwrite(m.woAPOE[!SNP.adni %in% incorrect[, SNP.adni] , .(SNP = SNP.adni, REF, P, BETA, ALT)], 
+       file = "willer_tc_adni_match/willer_tc_adni_match_woAPOE.txt", sep = "\t")
+fwrite(flipped[, .(SNP.adni)], 
+       file = "willer_tc_adni_match/willer_tc_adni_match_SNPsFlip.txt", 
+       sep = "\t", col.names = FALSE)
+fwrite(incorrect, 
+       file = "willer_tc_adni_match/willer_tc_adni_match_SNPsExcl.txt", 
+       sep = "\t", col.names = FALSE)
+```
