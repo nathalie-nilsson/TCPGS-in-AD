@@ -1,4 +1,8 @@
-MIT License
+## Overview
+The code in this project is licensed under the MIT license with the exception of the function defined in 'scripts/longest_common_substring.R' that were defined by https://stackoverflow.com/users/4137985/cath under CC BY-SA 3.0
+
+
+## MIT License
 
 Copyright (c) 2021 nathalie-nilsson
 
@@ -19,3 +23,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## CC BY-SA 3.0
+https://creativecommons.org/licenses/by-sa/3.0/
