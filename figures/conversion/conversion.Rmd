@@ -1,0 +1,117 @@
+---
+title: 'Conversion rate ~ TC-PGS'
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig.width: 6.5
+    highlight: textmate
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R version
+```{r, echo=FALSE}
+R.version
+```
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Input
+
+#### ADNI data
+```{r}
+adni.data <- "analyses/adni/v2_prad_snps/8_biological_ad/adni_conv.RData"
+```
+
+#### ROSMAP data
+```{r}
+roma.data <- "analyses/rosmap/8_biological_ad/roma_conv.RData"
+```
+
+#### Output
+```{r}
+output.name <- "conversion"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(cowplot)
+library(survival)
+library(ggfortify)
+
+source("~/Research/Projects/thesis_tc_pgs_in_AD/scripts/project_functions.R")
+source("~/PhD_milestones/PhD thesis/figures/plot_parameters_for_thesis.R")
+```
+
+## Data
+
+### ADNI
+```{r}
+load(paste(path.to.project, adni.data, sep = ""), verbose = TRUE)
+```
+
+#### ROSMAP
+```{r}
+load(paste(path.to.project, roma.data, sep = ""), verbose = TRUE)
+```
+
+## Plotting
+
+#### ADNI
+```{r}
+plot.adni <- autoplot(my.fit.0, conf.int = FALSE, surv.size = 1) +
+    labs(title = "(A) Conversion in ADNI", 
+         subtitle = " ", 
+         y = "% not converted to AD", 
+         x = "Time after baseline [months]") +
+    scale_y_continuous(labels = c(0, 25, 50, 75, 100)) +
+    my.theme.bar
+plot.adni
+```
+
+#### ROSMAP
+```{r}
+plot.roma.f <- autoplot(my.fit.f, conf.int = FALSE, surv.size = 1) +
+    labs(title = "(B) Conversion in ROSMAP", 
+         subtitle = "Females", 
+         y = "% not converted to AD", 
+         x = "Age [years]") +
+    scale_y_continuous(labels = c(0, 25, 50, 75, 100)) +
+    xlim(c(72, 90)) +
+    my.theme.bar
+plot.roma.f
+```
+
+```{r}
+plot.roma.m <- autoplot(my.fit.m, conf.int = FALSE, surv.size = 1) +
+    labs(title = " ", 
+         subtitle = "Males", 
+         y = "% not converted to AD", 
+         x = "Age [years]") +
+    scale_y_continuous(labels = c(0, 25, 50, 75, 100)) +
+    xlim(c(72, 90)) +
+    my.theme.bar
+plot.roma.m
+```
+
+#### Summary plot
+```{r, fig.height=3.2, fig.width=7}
+p <- plot_grid(plot.adni, plot.roma.f, plot.roma.m, 
+               ncol = 3)
+p
+```
+
+```{r}
+ggsave(paste(output.name, ".pdf", sep = ""), plot = p, device = "pdf", width = 7, height = 3.2)
+```
+

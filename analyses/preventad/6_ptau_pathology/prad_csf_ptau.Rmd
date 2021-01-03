@@ -1,0 +1,154 @@
+---
+title: "CSF p-tau at baseline ~ TC pgs in PRAD"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+PREVENT-AD have a low of individuals and a low number of individuals on statins. Thus, in order to preserve power, and the fact that the sex effect of the TC-PGS on TC levels were pronounced for both PREVENT-AD and ADNI (whereas stratification on statins in ADNI had smaller effect), we are examining the effect of the interaction between TC-PGS and sex on CSF p-tau. Statin use is included as a covariate.
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/preventad/prad_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+summary(pheno)
+```
+
+### Filter data for presence of CSF data
+```{r}
+csf <- filter(pheno, !is.na(csf.ptau)) %>%
+    select(iid, PC1:PC10, sex, apoe4.status, statin, tc.mM, csf.age, csf.ptau, tc.pgs)
+
+#csf$sex <- factor(csf$sex, levels = c("Male", "Female"))
+```
+
+**Missing data**
+```{r}
+apply(csf, 2, function(x) sum(is.na(x)))
+```
+
+Missing TC data for one individual and APOE-E4 data for one individual. Excluding individual with no APOE-E4 data because variable included as covariate in analysis, keeping individual with missing TC data because only used for descriptives.  
+```{r}
+csf.cc <- filter(csf, !is.na(apoe4.status)) %>%
+    mutate(sex = relevel(sex, ref = "Male"))
+```
+
+## Descriptives
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- csf.cc
+m.dt$apoe4.status <- as.numeric(m.dt$apoe4.status) - 1
+m.dt$statin <- as.numeric(m.dt$statin) - 1
+
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("csf.age", "tc.mM", "tc.pgs", "csf.ptau"), 
+         disc_variables = c("statin", "apoe4.status"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## EDA
+
+#### TC-PGS distribution
+```{r}
+grid.arrange(
+    ggplot(csf.cc, aes(tc.pgs)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(tc.pgs, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+#### CSF p-tau distribution
+```{r}
+grid.arrange(
+    ggplot(csf.cc, aes(csf.ptau)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(csf.ptau, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+Data look fairly normally distributed. 
+
+## TC-PGS effect on CSF data
+
+### Linear regression - All individuals
+
+**Statistics**
+```{r}
+formula.1 <- as.formula("csf.ptau ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+csf.age + apoe4.status + statin + sex * tc.pgs")
+linreg.1 <- lm(formula.1, data = csf.cc)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.1)
+```
+
+Results:
+```{r}
+summary(linreg.1)
+```
+
+**Plotting**
+```{r, echo=FALSE, fig.width=3.25}
+ggplot(csf.cc, aes_string(x = "tc.pgs", y = "csf.ptau", color = "sex")) +
+        geom_point(size = 3) +
+        geom_smooth(method = "lm", se = FALSE) +
+        scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme
+```
+
+## Save data
+```{r}
+save(list = c("csf", "desc.stat"), file = "prad_csf_ptau.RData")
+```
+

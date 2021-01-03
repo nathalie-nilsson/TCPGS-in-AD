@@ -1,0 +1,80 @@
+---
+title: "Log of 'prad_csf_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADPREVENT/Patient_data/DATA_RELEASE_5.0_20171130/raw_data/dataDump01Dec17/nn_xlsx/" 
+```
+`r raw.dir`
+
+Note that data are  collected from PREVENT-AD data release 5.0.
+
+### Raw data files
+Paths relative to raw data directory (files and names are exactly the same as raw data files, just converted to '.xlsx' format):
+```{r}
+csf.file <- "LP.xlsx"
+```
+
+## Libraries
+```{r}
+library(openxlsx)
+library(tidyverse)
+```
+
+## Read & clean data
+```{r}
+colnames(read.xlsx(paste(raw.dir, csf.file, sep = "")))
+
+csf <- read.xlsx(paste(raw.dir, csf.file, sep = "")) %>%
+    mutate(csf.age = Candidate_Age/12) %>%
+    select(iid = PSCID,
+           visit = Visit_label, 
+           csf.age, 
+           csf.date = Date_taken, 
+           csf.ab42 = ELISA_final_b_amyloid1_42,
+           csf.ab40 = Abeta40,
+           csf.tau = ELISA_tau, 
+           csf.ptau = ELISA_ptau)
+knitr::kable(head(csf))
+```
+
+**Number of measurements per visit:**
+```{r}
+csf.g <- group_by(csf, visit) %>%
+  summarise(n.ab42 = sum(!is.na(csf.ab42)),
+            n.ab40 = sum(!is.na(csf.ab40)),
+            n.tau = sum(!is.na(csf.tau)),
+            n.ptau = sum(!is.na(csf.ptau)))
+knitr::kable(csf.g)
+```
+
+## Write data
+```{r}
+write.table(csf, file = "prad_csf_data.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+```
+

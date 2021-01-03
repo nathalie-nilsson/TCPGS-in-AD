@@ -1,0 +1,188 @@
+---
+title: "Log of 'prad_summary_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+#### Cleaned raw data files:
+```{r}
+demog.file <- "extracted_from_rawdata/prad_demog_data.txt"
+statin.file <- "extracted_from_rawdata/prad_statin_data.txt"
+tc.file <- "extracted_from_rawdata/prad_lipid_data.txt"
+csf.file <- "extracted_from_rawdata/prad_csf_data.txt"
+pet.file <- "extracted_from_rawdata/prad_pet_data.txt"
+bl.file <- "extracted_from_rawdata/prad_bl_data.txt"
+```
+
+#### PCA file from outside project:
+```{r}
+pca.file <- "~/Research/Cohort_data/ADPREVENT/Genetic_data/PRAD_2019/pca-1kG_v3_ld/PCA_EUR/PCA/PRAD_2019_EUR_PCA.eigenvec"
+```
+
+#### TC-PGS file from within project:
+p-value cut-off determined to be p <= 1e-6
+```{r}
+pgs.file <- "analyses/preventad/1_pg_scoring/score_files/prad_tc_pgs.S09.profile"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+## Data 
+
+#### Genetic PC data
+```{r}
+pca <- read.table(pca.file, header = TRUE) %>%
+    select(iid = IID, PC1:PC10)
+head(pca)
+```
+
+#### Baseline age
+```{r}
+bl <- read.table(bl.file, header = TRUE) %>%
+    rename(bl.visit = visit)
+head(bl)
+```
+
+#### Demographic data
+```{r}
+demog <- read.table(demog.file, header = TRUE)
+summary(demog)
+```
+
+#### Statin data
+```{r}
+statin <- read.table(statin.file, header = TRUE) 
+summary(statin)
+```
+
+#### Lipid data
+```{r}
+tc <- read.table(tc.file, header = TRUE) 
+summary(tc)
+
+tc.preel <- filter(tc, visit == "PREEL00") %>%
+    unique() %>% 
+    select(iid, tc.age, tc.date, tc.mM) %>%
+    filter(!is.na(tc.mM))
+```
+
+#### CSF data
+```{r}
+csf <- read.table(csf.file, header = TRUE)
+summary(csf)
+
+csf.bl <- filter(csf, grepl("00", visit)) %>%
+    rename(csf.visit = visit)
+```
+
+#### PET data
+```{r}
+pet <- read.table(pet.file, header = TRUE, sep = "\t") %>%
+    select(-visit)
+summary(pet)
+```
+
+#### TC-PGS data
+```{r}
+pgs <- read.table(paste(path.to.project, pgs.file, sep = ""), header = TRUE)
+summary(pgs)
+```
+No. of SNPs included in the score = `r unique(pgs$CNT)/2`
+PGS range = `r range(pgs$SCORE)`
+
+Standardizing the PGS:
+```{r}
+pgs$tc.pgs <- scale(pgs$SCORE)[,1]
+pgs$uw.tcpgs <- scale((pgs$CNT2/pgs$CNT))[,1]
+
+pgs.s <- select(pgs, iid = IID, tc.pgs, uw.tcpgs)
+```
+
+#### Merge data
+```{r}
+m.bl <- Reduce(function(x, y) merge.data.frame(x, y, all.x=TRUE), list(pca, demog, bl, statin, tc.preel, csf.bl, pet, pgs.s))
+```
+
+## New variables
+
+#### Date of birth
+Many individuals lack data for date of birth but have dates for and age for other data collection. Thus missing date of birth can be calculated with these variables:
+```{r}
+m.date <- select(m.bl, dob, contains("date"), contains("age")) %>%
+    filter(is.na(dob)) %>%
+    arrange(tc.age, bl.age, csf.age)
+m.date
+
+dob.f <- function(x.date, x.age) {
+    date(date(x.date) - dyears(x.age))
+}
+
+
+m.bl <- mutate(m.bl,
+                 bl.age.y = bl.age/12,
+                 bl.dob.calc = dob.f(bl.date, bl.age.y), 
+                 tc.dob.calc = dob.f(tc.date, tc.age), 
+                 csf.dob.calc = dob.f(csf.date, csf.age))
+m.bl$dob.final <- apply(m.bl[, c("dob", "bl.dob.calc", "tc.dob.calc", "csf.dob.calc")], 1, function(x) {
+    x[min(which(!is.na(x)))] 
+})
+
+ggplot(m.bl, aes(date(dob), bl.dob.calc)) +
+    geom_point()
+```
+
+Number of individuals with calculated DOBs:
+```{r}
+sum(is.na(m.bl$dob)) - sum(is.na(m.bl$dob.final))
+```
+
+PET data are collected over different visits for different subjects, thus, age for these visits needs to be calculated.
+```{r}
+m.bl$petab.age <- as.duration(m.bl$dob.final %--% m.bl$petab.date) / dyears(1)
+m.bl$pettau.age <- as.duration(m.bl$dob.final %--% m.bl$pettau.date) / dyears(1)
+
+summary(m.bl)
+```
+
+## Check variables classes
+```{r}
+lapply(m.bl, class)
+```
+
+```{r}
+m.bl$apoe4.status <- factor(m.bl$apoe4.status, levels = c(0, 1), labels = c("APOE4_neg", "APOE4_pos"))
+m.bl$statin <- factor(m.bl$statin, levels = c(0, 1), labels = c("Statin_neg", "Statin_pos"))
+m.bl$pettau.pos <- factor(m.bl$pettau.pos, levels = c(0, 1), labels = c("TAU_neg", "TAU_pos"))
+```
+
+## Write data
+```{r}
+write.table(m.bl, file = "prad_summary_data.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+```
+

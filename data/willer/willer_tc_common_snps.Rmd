@@ -1,0 +1,196 @@
+---
+title: "Log of 'willer_tc_common_snps.txt'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+Meta-analysis summary data and associated information was downloaded from http://csg.sph.umich.edu/willer/public/lipids2013/
+```{r input}
+willer.file <- "raw_data/jointGwasMc_TC.txt"
+```
+
+Genetic data from outside project directory:
+```{r}
+adni.file <- "~/Research/Cohort_data/ADNI/Genetic_data/ADNI/ADNI_EUR_PCAv3/ADNI_EUR_v3.bim"
+prad.file <- "~/Research/Cohort_data/ADPREVENT/Genetic_data/PRAD_2019/imputed/prad_2019_imp_eur.bim"
+rosmap.file <- "~/Research/Cohort_data/ROSMAP/genetic_data/imputed/rosmap_imp_eur.bim"
+```
+
+## Libraries
+```{r libraries}
+library(gridExtra)
+library(data.table)
+library(ggplot2)
+
+source(paste(path.to.project, "scripts/ambiguousSNPs.R", sep = ""))
+```
+
+## Willer TC data
+Each table includes ten columns:
+the marker names in build hg18 and hg19, the marker names in rsid format, the two alleles of the SNP, the effect size associated with the SNP (A1 = effect allele), the corresponding standard error, the number of individuals evaluated for the SNP, the combined pvalue for the SNP and the frequency of the first allele (the trait increasing allele) in the 1000 Genomes European sample.
+
+Read data:
+```{r willer data}
+willer.raw <- fread(willer.file, header = TRUE)
+willer.raw
+dim(willer.raw)
+```
+
+Check format of data:
+```{r}
+unique(willer.raw[, A1])
+unique(willer.raw[, A2])
+range(willer.raw[, beta])
+```
+
+Plot betas:
+```{r}
+grid.arrange(
+    ggplot(willer.raw, aes(beta)) + 
+        geom_histogram(),
+    ggplot(willer.raw, aes(beta)) + 
+        geom_histogram() +
+        ylim(c(0, 5000)),
+    ncol = 2
+)
+```
+
+Select columns
+```{r}
+willer <- willer.raw[, `:=`(REF=toupper(A1), 
+                      ALT=toupper(A2), 
+                      POS=gsub("chr", "", SNP_hg19))
+               ][, c("rsid", "REF", "ALT", "beta", "P-value", "POS"), with = FALSE
+                 ][, c("CHR", "BP") := tstrsplit(POS, ":", fixed= TRUE, type.convert = TRUE)]
+colnames(willer) <- c("SNP", "REF", "ALT", "BETA", "P", "POS", "CHR", "BP")
+willer
+```
+
+Range of beta & p values:
+```{r}
+range(willer[, BETA])
+range(willer[, P])
+```
+
+rs# are unique:
+```{r}
+length(unique(willer[, SNP])) == willer[, .N]
+length(unique(willer[, POS])) == willer[, .N]
+```
+
+Plot p values:
+```{r pvalue plots}
+grid.arrange(
+    ggplot(willer, aes(-log10(P))) + 
+        geom_histogram(),
+    ggplot(willer, aes(-log10(P))) + 
+        geom_histogram() +
+        xlim(c(8, 300)) +
+        ylim(c(0, 1000)),
+    ggplot(willer, aes(sample=-log10(P))) + 
+        stat_qq(),
+    ncol = 3
+)
+```
+
+Ambiguous SNPs (to be excluded):
+```{r}
+amb.snps <- ambiguousSNPs(willer[, .(ID = SNP, A1 = REF, A2 = ALT)])
+
+length(amb.snps)/willer[, .N] # proportion of Willer SNPs that are ambiguous
+
+# Willer data filtered for ambiguous SNPs
+willer.f <- willer[!SNP %in% amb.snps, ]
+willer.f
+
+willer.n <- willer.f[, .N]
+```
+
+```{r}
+rm(willer.raw, willer, amb.snps)
+```
+
+## PREVENT-AD data
+```{r prevent-ad data}
+prad <- fread(prad.file)
+colnames(prad) <- c("CHR", "rsID", "CM", "BP", "A1", "A2")
+prad[, POS := .(paste(CHR, BP, sep = ":"))]
+prad
+
+# unique rs#
+length(unique(prad[, rsID])) == prad[, .N]
+
+# percent willer SNPs in prad
+willer.f[POS %in% prad[, POS], .N]/willer.n
+```
+
+## ADNI data
+```{r adni data}
+adni <- fread(adni.file)
+colnames(adni) <- c("CHR", "rsID", "CM", "BP", "A1", "A2")
+adni[, POS := .(paste(CHR, BP, sep = ":"))]
+adni
+
+# unique rs#
+length(unique(adni[, rsID])) == adni[, .N]
+
+# percent willer SNPs in adni
+willer.f[POS %in% adni[, POS], .N]/willer.n
+```
+
+## ROSMAP data
+```{r rosmap data}
+rosmap <- fread(rosmap.file)
+colnames(rosmap) <- c("CHR", "rsID", "CM", "BP", "A1", "A2")
+rosmap[, POS := .(paste(CHR, BP, sep = ":"))]
+rosmap
+
+# unique rs#
+length(unique(rosmap[, rsID])) == rosmap[, .N]
+
+# percent willer SNPs in rosmap
+willer.f[POS %in% rosmap[, POS], .N]/willer.n
+```
+
+## Common SNPs
+```{r common snps}
+common.snps <- willer.f[POS %in% adni[, POS]
+     ][POS %in% prad[, POS]
+       ][POS %in% rosmap[, POS]]
+common.snps
+
+common.snps.n <- willer.f[POS %in% common.snps[, POS], .N]
+common.snps.n
+common.snps.n/willer.n # percentage willer SNPs in all three target data sets
+```
+
+## APOE region excluded
+APOE gene (chr19: 45,409,011-45,412,650) +- 1M bp excluded:
+```{r}
+common.snps.apoe <- common.snps[CHR == 19 & BP >= 44409011 & BP <= 46412650, ]
+common.snps.wo.apoe <- common.snps[!POS %in% common.snps.apoe[, POS], ]
+```
+
+## Write data
+```{r write data}
+fwrite(common.snps, file = "willer_tc_common_snps.txt", sep = "\t")
+fwrite(common.snps.wo.apoe, file = "willer_tc_common_snps_woAPOE.txt", sep = "\t")
+```
+
+

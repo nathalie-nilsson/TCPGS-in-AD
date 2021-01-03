@@ -1,0 +1,324 @@
+---
+title: "Log of 'all_descriptives'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+```{r}
+prad.file <- "data/preventad/prad_summary_data.txt"
+prad.pgs.file <- "analyses/preventad/1_pg_scoring/score_files/prad_tc_pgs.S09.profile"
+adni.file <- "data/adni/adni_summary_data.txt"
+adni.pgs.file <- "analyses/adni/v2_prad_snps/1_pg_scoring/score_files/adni_tc_pgs.S09.profile"
+roma.file <- "data/rosmap/rosmap_summary_data.txt"
+roma.pgs.file <- "analyses/rosmap/1_pg_scoring/score_files/roma_tc_pgs.S09.profile"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(psych)
+library(rcompanion)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## PREVENT-AD data
+```{r}
+prad <- read.within.project.h(prad.file) %>%
+    mutate(cohort = "prad") %>%
+    filter(!is.na(sex))
+colnames(prad)
+
+# convert factors to numeric
+levels(prad$sex)
+prad$sex.f <- abs(as.numeric(prad$sex) - 2)
+sum(prad$sex.f, na.rm = TRUE)
+
+prad$apoe4.status <- as.numeric(prad$apoe4.status) - 1
+prad$statin <- as.numeric(prad$statin) - 1
+```
+
+### PGS raw data
+```{r}
+prad.pgs <- paste(path.to.project, prad.pgs.file, sep = "") %>%
+    read.table(header = TRUE) %>%
+    select(iid = IID, tc.pgs.raw = SCORE)
+```
+
+### TC data
+```{r}
+prad.tc <- select(prad, iid, PC1:PC10, sex, apoe4.status, statin, tc.age, tc.mM) %>%
+    na.omit() %>%
+    select(iid, tc.age, tc.mM)
+```
+
+### CSF data
+```{r}
+prad.csf <- filter(prad, !is.na(csf.age) & !is.na(apoe4.status)) %>%
+    select(iid, csf.age, csf.ab42, csf.ab40, csf.ptau, csf.tau)
+```
+
+### PET data
+```{r}
+prad.petab <- filter(prad, !is.na(petab)) %>%
+    select(iid, petab.age, petab)
+
+prad.pettau <- filter(prad, !is.na(pettau.etx) & !is.na(pettau.age)) %>%
+    select(iid, pettau.etx, pettau.age)
+```
+
+### ATN data
+```{r}
+prad.atn <- filter(prad, !is.na(petab)) %>%
+    mutate(atn.a = as.numeric(petab > 1.37)) %>%
+    select(iid, atn.age = petab.age, atn.a)
+```
+
+### Merged
+```{r}
+prad.s <- prad %>%
+    select(iid, cohort, sex.f, apoe4.status, statin, age = bl.age.y) %>%
+    merge.data.frame(prad.csf, all = TRUE) %>%
+    merge.data.frame(prad.tc, all = TRUE) %>%
+    merge.data.frame(prad.atn, all = TRUE) %>%
+    merge.data.frame(prad.petab, all = TRUE) %>%
+    merge.data.frame(prad.pettau, all = TRUE) %>%
+    merge.data.frame(prad.pgs, all.x = TRUE)
+```
+
+## ADNI data
+```{r}
+adni <- read.within.project.h(adni.file) %>%
+    filter(!is.na(tc.pgs) & fh.ad == 1) %>%
+    mutate(cohort = "adni")
+colnames(adni)
+```
+
+### PGS raw data
+```{r}
+adni.pgs <- paste(path.to.project, adni.pgs.file, sep = "") %>%
+    read.table(header = TRUE) %>%
+    select(iid = IID, tc.pgs.raw = SCORE)
+```
+
+### TC data
+```{r}
+adni.tc <- filter(adni, !is.na(statin.sc.bl) & !is.na(sc.tc.mM)) %>%
+    select(iid, tc.age, tc.mM = sc.tc.mM)
+```
+
+### CSF data
+```{r}
+adni.csf <- filter(adni, !is.na(bl.age) & (!is.na(bl.csf.ab42) | !is.na(bl.csf.ptau) | !is.na(bl.csf.tau))) %>%
+    select(iid, csf.age = bl.age, csf.ab42 = bl.csf.ab42, csf.ptau = bl.csf.ptau, csf.tau = bl.csf.tau)
+```
+
+### ATN data
+```{r}
+adni.atn <- filter(adni, !is.na(lv.atn.a) & !is.na(statin.sc.bl)) %>%
+    select(iid, atn.age = lv.csf.age, atn.a = lv.atn.a)
+```
+
+### Cognition
+```{r}
+adni.ci <- filter(adni, lv.atn.a == 1 & !is.na(statin.sc.bl) & !is.na(lv.ci)) %>%
+    select(iid, ci.age = lv.age, ci = lv.ci)
+```
+
+### Conversion
+```{r}
+adni.conv <- filter(adni, bl.atn.a == 1 & bl.dx %in% c(1, 2)) %>%
+    select(iid, conv.age = bl.age)
+```
+
+### Merged
+```{r}
+adni.s <- adni %>%
+    select(iid, cohort, sex.f, apoe4.status, statin = statin.sc.bl, age = bl.age) %>%
+    merge.data.frame(adni.tc, all = TRUE) %>%
+    merge.data.frame(adni.csf, all = TRUE) %>%
+    merge.data.frame(adni.atn, all = TRUE) %>%
+    merge.data.frame(adni.ci, all = TRUE) %>%
+    merge.data.frame(adni.conv, all = TRUE) %>%
+    merge.data.frame(adni.pgs, all.x = TRUE)
+```
+
+## ROSMAP data
+```{r}
+roma <- read.within.project.h(roma.file) %>%
+    mutate(cohort = "roma")
+colnames(roma)
+```
+
+### PGS raw data
+```{r}
+roma.pgs <- paste(path.to.project, roma.pgs.file, sep = "") %>%
+    read.table(header = TRUE) %>%
+    select(iid = IID, tc.pgs.raw = SCORE)
+```
+
+### ATN
+```{r}
+roma.atn <- filter(roma, !is.na(cerad.bin) & !is.na(tc.pgs) & !is.na(apoe4.status)) %>%
+    select(iid, atn.a = cerad.bin, atn.age = age)
+```
+
+### Cognition
+```{r}
+roma.cog <- filter(roma, cerad.bin == 1 & !is.na(tc.pgs) & !is.na(apoe4.status)) %>%
+    select(iid, ci.age = age, ci = cog.ci)
+```
+
+### Conversion
+```{r}
+roma.conv <- filter(roma, !is.na(tc.pgs) & cerad.bin == 1) %>%
+    select(iid, conv.age = age)
+```
+
+### Merged
+``` {r}
+roma.s <- roma %>%
+    select(iid, cohort, sex.f, apoe4.status, age) %>%
+    merge.data.frame(roma.atn, all = TRUE) %>%
+    merge.data.frame(roma.cog, all = TRUE) %>%
+    merge.data.frame(roma.conv, all = TRUE) %>%
+    merge.data.frame(roma.pgs, all.x = TRUE)
+```
+
+### Combined
+```{r}
+m <- merge.data.frame(prad.s, adni.s, all = TRUE) %>%
+    merge.data.frame(roma.s, all = TRUE)
+nrow(m) == (nrow(adni.s) + nrow(prad.s) + nrow(roma.s))
+```
+
+## Descriptives
+
+### Summary statistics
+```{r}
+d <- describeBy(m, "cohort")
+s <- d[["prad"]] %>%
+    merge.data.frame(d[["adni"]], by = "row.names", 
+                     suffixes = c("_prad", "_adni")) %>%
+    merge.data.frame(d[["roma"]], by.x = "Row.names", by.y = "row.names") %>%
+    select(variable = "Row.names", 
+           n_prad, mean_prad, se_prad, 
+           n_adni, mean_adni, se_adni, 
+           n_roma = n, mean_roma = mean, se_roma = se)
+s
+```
+
+```{r}
+s[, c(3,4,6,7,9,10)] <- round(s[, c(3,4,6,7,9,10)], 2)
+s
+```
+
+### P-values
+
+#### Chi-square tests
+```{r}
+disc_variables <- c("apoe4.status", "ci", "atn.a", "sex.f", "statin")
+c.list <- list()
+for(i in 1:length(disc_variables)) {
+    c.list[[disc_variables[i]]] <- chisq.test(m[, "cohort"], m[, disc_variables[i]])$p.value 
+}
+c.df <- data.frame(p = unlist(c.list)) %>%
+    rownames_to_column(var = "variable")
+```
+
+**APOE4 status post-hoc**
+```{r}
+pairwiseNominalIndependence(table(m$cohort, m$apoe4.status), 
+                            fisher = FALSE,
+                            gtest  = FALSE,
+                            chisq  = TRUE)
+```
+
+**Sex post-hoc**
+```{r}
+pairwiseNominalIndependence(table(m$cohort, m$sex), 
+                            fisher = FALSE,
+                            gtest  = FALSE,
+                            chisq  = TRUE)
+```
+
+**ATN post-hoc**
+```{r}
+pairwiseNominalIndependence(table(m$cohort, m$atn.a), 
+                            fisher = FALSE,
+                            gtest  = FALSE,
+                            chisq  = TRUE)
+```
+
+#### T-tests
+```{r}
+cont_variables_t <- c("tc.mM", "tc.age", "csf.ab42", "csf.ptau", "csf.tau", "csf.age", "ci.age", "conv.age")
+t.list <- list()
+for (i in 1:length(cont_variables_t)) {
+    t.list[[cont_variables_t[i]]] <- t.test(as.formula(paste(cont_variables_t[i], "~", "cohort")), data = m)$p.value 
+}
+t.df <- data.frame(p = unlist(t.list)) %>%
+    rownames_to_column("variable")
+```
+
+#### ANOVAs
+```{r}
+cont_variables_a <- c("tc.pgs.raw", "age", "atn.age")
+
+anova.tc.pgs <- aov(lm(tc.pgs.raw~cohort, m))
+anova.tc.pgs %>% summary()
+TukeyHSD(anova.tc.pgs)
+
+anova.age <- aov(lm(age~cohort, m))
+anova.age %>% summary()
+TukeyHSD(anova.age)
+
+anova.atn.age <- aov(lm(atn.age~cohort, m))
+anova.atn.age %>% summary()
+TukeyHSD(anova.atn.age)
+
+a.df <- data.frame(variable = c("tc.pgs.raw", "age", "atn.age"), 
+                   p = c(anova(lm(tc.pgs.raw~cohort, m))$`Pr(>F)`[1], 
+                         anova(lm(age~cohort, m))$`Pr(>F)`[1],
+                         anova(lm(atn.age~cohort, m))$`Pr(>F)`[1]))
+```
+
+#### All
+```{r}
+p <- rbind.data.frame(c.df, t.df, a.df)
+```
+
+### Final table
+```{r}
+final <- merge.data.frame(s, p, all.x = TRUE) %>%
+    mutate(prad.mean.se = paste(mean_prad, " (", se_prad, ")", sep = ""), 
+           adni.mean.se = paste(mean_adni, " (", se_adni, ")", sep = ""), 
+           roma.mean.se = paste(mean_roma, " (", se_roma, ")", sep = "")) %>%
+    select(variable, n_prad, prad.mean.se, n_adni, adni.mean.se, n_roma, roma.mean.se, p)
+final
+```
+
+```{r}
+write.table(final, "all_descriptives.txt", row.names = FALSE, quote = FALSE, sep = "\t")
+```
+

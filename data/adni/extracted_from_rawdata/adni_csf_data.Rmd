@@ -1,0 +1,147 @@
+---
+title: "Log of 'adni_csf_data.txt'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/. Observe that while most other data was downloaded 2015-12-03, CSF data were downloaded 2018-06-22. 
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/" 
+```
+Collected from: `r raw.dir`
+
+### Raw data files
+```{r input}
+# Raw data from outsided project
+key.file <- "2015-12-03/ROSTER.csv"
+csf.file <- "2018-06-22/UPENNBIOMK9_04_19_17.csv"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Key data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+head(key)
+```
+
+## CSF data
+
+### Read & clean up of data
+CSF data column names:
+```{r}
+colnames(read.csv(paste(raw.dir, csf.file, sep = ""), header = TRUE))
+csf <- read.csv(paste(raw.dir, csf.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(IID, VISCODE2, EXAMDATE, ABETA, TAU, PTAU, COMMENT) %>%
+    unique()
+```
+
+Overview of data:
+```{r}
+summary(csf)
+```
+
+Replace empty cells with NAs
+```{r}
+csf[csf == ""] <- NA
+summary(csf)
+```
+
+Clean up csf data:
+```{r}
+unique(csf$COMMENT)
+
+csf.v2 <- csf %>%
+    separate(COMMENT, c(paste("V", 1:6, sep = "")), sep = " ") %>%
+    mutate(csf.tau = as.numeric(as.character(TAU)), 
+           csf.ptau = as.numeric(as.character(PTAU)), 
+           abeta.n = as.numeric(as.character(ABETA)), 
+           abeta.2 = as.numeric(V5)) 
+
+csf.v2$csf.ab42 <- apply(select(csf.v2, abeta.2, abeta.n), 1, function(x) 
+    if(!is.na(x[1])) {x[1]} else {x[2]})
+```
+
+Unique labels in "VISCODE2":
+```{r}
+unique(csf.v2$VISCODE2)
+```
+
+To create a numeric time variable, "nv" in "VISCODE2" are replaced with NAs and "bl" with 0 - this will be the **"csf.time"**, variable.
+```{r}
+cleaned.data <- csf.v2 %>%
+    mutate(VISCODE.rm1 = gsub("bl", 0, VISCODE2), 
+           VISCODE.rm2 = gsub("nv", NA, VISCODE.rm1),
+           csf.time = as.numeric(gsub("m", "", VISCODE.rm2))) %>% 
+    select(IID, VISCODE2, csf.time, EXAMDATE, contains("csf"))
+head(cleaned.data)
+```
+
+### Baseline data 
+```{r}
+csf.bl <- filter(cleaned.data, csf.time == 0) %>%
+    select(IID, bl.csf.tau = csf.tau, bl.csf.ptau = csf.ptau, bl.csf.ab42 = csf.ab42) %>%
+    unique()
+
+# check for duplicates
+sum(duplicated(csf.bl$IID))
+```
+
+### Last visit data
+```{r}
+# Last csf visit ####
+csf.lv <- filter(cleaned.data, !is.na(csf.time)) %>% 
+    group_by(IID) %>%
+    summarise(lv.csf.time = max(csf.time, na.rm = TRUE)) %>%
+    unique()
+
+# Last csf status ####
+csf.lvstatus <- merge.data.frame(cleaned.data, csf.lv) %>%
+    filter(csf.time == lv.csf.time) %>%
+    select(IID, lv.csf.tau = csf.tau, lv.csf.ptau = csf.ptau, lv.csf.ab42 = csf.ab42, lv = VISCODE2, lv.csf.time) %>%
+    unique()
+
+# Check for duplicates
+duplicated(csf.lvstatus$IID) %>% sum()
+```
+
+```{r}
+csf.final <- cleaned.data %>%
+    select(IID, VISCODE2, EXAMDATE, csf.time, csf.tau, csf.ptau, csf.ab42) %>%
+    merge.data.frame(csf.bl) %>%
+    merge.data.frame(csf.lvstatus)
+summary(csf.final)
+```
+
+## Write data
+```{r}
+write.table(csf.final, file = "adni_csf_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```

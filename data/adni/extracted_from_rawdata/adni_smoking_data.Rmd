@@ -1,0 +1,112 @@
+---
+title: "Log of 'adni_smoking_data'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+`r raw.dir`
+
+### Raw data files
+```{r input}
+key.file <- "ROSTER.csv"
+smoke.file <- "MEDHIST.csv"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Data
+
+#### Key data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+```
+
+#### Smoking data
+Reading data, selecting columns with smoking info, filtering for 'sc' and 'bl' visit to match the TC data:
+```{r}
+colnames(read.csv(paste(raw.dir, smoke.file, sep = ""), header = TRUE))
+smoke.sc <- read.csv(paste(raw.dir, smoke.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(IID, VISCODE2, contains("SMOK")) %>%
+    filter(VISCODE2 %in% c("sc", "bl"))
+summary(smoke.sc)
+```
+
+Replacing '-4' with NA:
+```{r}
+smoke.sc[smoke.sc == -4] <- NA
+```
+
+
+Column explanations:
+> MH16SMOK:  Smoking (1=Yes; 0=No)
+> MH16ASMOK: During periods of smoking, the average number of packs/day
+> MH16BSMOK: Duration (years)
+> MH16CSMOK: If no longer smoking, provide period of time since stopped smoking (years)
+
+Unique values in each column:
+```{r}
+apply(smoke.sc[, -1], 2, unique)
+```
+
+It is unclear whether the 'MH16SMOK' column contains data for current smoking status or ever smoking status. To examine this, data is grouped on smoking status and the number of individuals that has data for stop smoking is evaluated:
+```{r}
+group_by(smoke.sc, MH16SMOK) %>%
+    summarise(n.stop.smoking = sum(!is.na(MH16CSMOK)))
+```
+
+Thus, it seems like 'MH16SMOK' is a mix of "ever smoking" and "current smoking". A new column will be created where if there is data in the 'MH16CSMOK' (time since stopped smoking) I will conclude that they were smokers, but are not currently smokers (at the sc visit). 
+```{r}
+smoke.sc$sc.smoking <- apply(smoke.sc[, c("MH16SMOK", "MH16CSMOK")], 1, function(x) {
+    if(x[1] == 0) {0}
+    else if(x[1] == 1 & !is.na(x[2])) {0}
+    else if(x[1] == 1 & is.na(x[2])) {1}
+})
+```
+
+#### Duplicate check
+```{r}
+sum(duplicated(smoke.sc$IID))
+```
+
+```{r}
+smoke.unique <- select(smoke.sc, IID, sc.smoking) %>%
+    unique()
+sum(duplicated(smoke.unique$IID))
+```
+
+## Write data
+```{r}
+write.table(smoke.unique, file = "adni_smoking_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```

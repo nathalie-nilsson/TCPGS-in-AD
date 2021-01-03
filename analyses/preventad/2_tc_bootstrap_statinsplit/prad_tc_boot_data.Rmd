@@ -1,0 +1,71 @@
+---
+title: "prad_tc_boot_data"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+Relative to project base directory:
+```{r}
+mydata.file <- "data/preventad/prad_summary_data.txt"
+```
+
+Output parameters:
+```{r}
+output.name <- "prad_tc_boot_data"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Read & select data
+```{r}
+mydata <- read.within.project.h(mydata.file)
+summary(mydata)
+```
+
+```{r}
+mydata.s <- select(mydata, iid, PC1:PC10, sex, apoe4.status, statin, age = tc.age, tc.mM) %>%
+    mutate(age2 = age^2) %>% # create squared age to include as covariate
+    filter(!is.na(tc.mM)) # filter for non-missing data in TC column
+```
+
+Missing data:
+```{r}
+apply(mydata.s, 2, function(x) sum(is.na(x)))
+```
+
+Complete cases:
+```{r}
+mydata.cc <- na.omit(mydata.s)
+summary(mydata.cc)
+```
+
+## Write data
+```{r}
+my.write.t(mydata.cc, file.name = paste(output.name, ".txt", sep = ""))
+```
+

@@ -1,0 +1,164 @@
+---
+title: "PET tau ~ TC-PGS in PRAD"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+PREVENT-AD have a low of individuals and a low number of individuals on statins. Thus, in order to preserve power, and the fact that the sex effect of the TC-PGS on TC levels were pronounced for both PREVENT-AD and ADNI (whereas stratification on statins in ADNI had smaller effect), we are examining the effect of the interaction between TC-PGS and sex on PET tau. Statin use is included as a covariate. 
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/preventad/prad_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+summary(pheno)
+```
+
+### Cleaning data
+```{r}
+pet <- filter(pheno, !is.na(pettau.etx)) %>%
+    select(iid, PC1:PC10, sex, apoe4.status, statin, tc.mM, pettau.age, pettau.etx, pettau.pos, tc.pgs) %>%
+    mutate(sex = relevel(sex, ref = "Male"))
+```
+
+**Missing data**
+```{r}
+apply(pet, 2, function(x) sum(is.na(x)))
+filter(pet, is.na(statin) | is.na(tc.mM) | is.na(pettau.age | is.na(sex))) %>%
+    select(iid, sex:tc.pgs)
+```
+Three individuals have missing data (either on statin, TC levels or age). TC levels are only for descriptives why only "MTL0143" will be excluded. 
+
+```{r}
+pet.cc <- filter(pet, iid != "MTL0143")
+```
+
+## Descriptives
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- pet.cc
+m.dt$apoe4.status <- as.numeric(m.dt$apoe4.status) - 1
+m.dt$statin <- as.numeric(m.dt$statin) - 1
+m.dt$pettau.pos <- as.numeric(m.dt$pettau.pos) - 1
+
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("pettau.age", "tc.mM", "tc.pgs", "pettau.etx"), 
+         disc_variables = c("statin", "apoe4.status", "pettau.pos"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## EDA
+
+#### TC-PGS distribution
+```{r}
+grid.arrange(
+    ggplot(pet.cc, aes(tc.pgs)) + 
+        geom_histogram(data = filter(pet.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(pet.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(pet.cc, aes(tc.pgs, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+#### PET distribution
+```{r}
+grid.arrange(
+    ggplot(pet.cc, aes(pettau.etx)) + 
+        geom_histogram(data = filter(pet.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(pet.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(pet.cc, aes(log2(pettau.etx), fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+Data look fairly normally distributed. 
+
+## TC-PGS effect on PET data
+
+### Linear regression - All individuals
+
+**Statistics**
+```{r}
+formula.1 <- as.formula("log2(pettau.etx) ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+pettau.age + apoe4.status + statin + sex * tc.pgs")
+linreg.1 <- lm(formula.1, data = pet.cc)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.1)
+```
+
+Results:
+```{r}
+summary(linreg.1)
+```
+
+```{r}
+formula.2 <- as.formula("pettau.pos ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+pettau.age + apoe4.status + statin + sex * tc.pgs")
+logreg <- glm(formula.2, data = pet.cc, family = "binomial")
+summary(logreg)
+```
+
+**Plotting**
+```{r, echo=FALSE, fig.width=3.25}
+ggplot(pet.cc, aes_string(x = "tc.pgs", y = "pettau.etx", color = "sex")) +
+        geom_point(size = 3) +
+        geom_smooth(method = "lm", se = FALSE) +
+    scale_y_continuous(trans = "log2", 
+                       breaks = c(1, 1.25, 1.5)) +
+        scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme +
+    theme(axis.ticks.y =)
+```
+
+## Save data
+```{r}
+save(list = c("pet.cc", "desc.stat"), file = "prad_pet_tau.RData")
+```
+

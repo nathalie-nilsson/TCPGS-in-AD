@@ -1,0 +1,171 @@
+---
+title: "Hypercholesterolemia ROC in PRAD"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+The effect of a tc-pgs (with SNPs with p <= 1e-6) on a hypercholesterolemia diagnosis in PREVENT-AD. Due to the small sample size, individuals were judged to be hypercholesterolemic if they were on statins or if they had TC levels > 6.2 mM (according to Mayo clinic). 
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/preventad/prad_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(pROC)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file) %>%
+    mutate(tc.age2 = tc.age^2) %>%
+    select(iid, PC1:PC10, sex, statin, tc.age, tc.age2, apoe4.status, tc.pgs, tc.mM) %>%
+    filter(!is.na(tc.mM) & !is.na(apoe4.status) & !is.na(tc.pgs))
+summary(pheno)
+```
+
+### Hypercholesterolemia variables
+Two variables are created, "hc.tc" which is defined as tc.mM > 6.2, and "hc.statin" which is defined as tc.mM > 6.2 in statin negative individuals, and includes all statin users as hypercholesterolemic. 
+```{r}
+pheno$hc.tc <- as.numeric(pheno$tc.mM > 6.2)
+
+pheno$hc.statin <- apply(pheno[, c("statin", "tc.mM")], 1, function(x) {
+    if(is.na(x[1])) {NA}
+    else if(x[1] == "Statin_pos") {1}
+    else if(x[1] == "Statin_neg" & x[2] > 6.2) {1}
+    else if(x[1] == "Statin_neg" & x[2] <= 6.2) {0}
+})
+```
+
+### Summary statistics
+
+Discrete variables are presented as percentages and continuous variables as means. Difference in continuous and discrete variables between strata is assessed by Welch t-test and chi-squared test, respectively.
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- pheno
+m.dt$apoe4.status <- as.numeric(m.dt$apoe4.status) - 1
+
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("tc.age", "tc.mM"), 
+         disc_variables = c("apoe4.status", "hc.statin"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## Replicate R2 values from bootstrap analysis
+```{r}
+statin.neg <- filter(pheno, statin == "Statin_neg")
+rep.cov <- lm(tc.mM ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+apoe4.status+tc.age+tc.age2+sex, 
+              data = statin.neg)
+statin.neg$tc.res <- rep.cov$residuals
+
+rep.full <- lm(tc.mM ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+apoe4.status+tc.age+tc.age2+sex+tc.pgs, 
+              data = statin.neg)
+rep.res <- (lm(tc.res ~ tc.pgs, data = statin.neg)) 
+
+summary(rep.cov)$adj.r.squared
+summary(rep.full)$adj.r.squared
+summary(rep.res)$adj.r.squared
+summary(rep.full)$adj.r.squared-summary(rep.cov)$adj.r.squared
+```
+
+```{r}
+statin.neg.f <- filter(statin.neg, sex == "Female")
+
+sex.cov <- lm(tc.mM ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+apoe4.status+tc.age+tc.age2, 
+              data = statin.neg.f)
+statin.neg.f$tc.res <- sex.cov$residuals
+
+sex.full <- lm(tc.mM ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+apoe4.status+tc.age+tc.age2+tc.pgs, 
+              data = statin.neg.f)
+
+sex.res <- (lm(tc.res ~ tc.pgs, data = statin.neg.f)) 
+
+summary(sex.cov)$adj.r.squared
+summary(sex.full)$adj.r.squared
+summary(sex.res)$adj.r.squared
+summary(sex.full)$adj.r.squared-summary(sex.cov)$adj.r.squared
+```
+
+## ROC
+
+### Females
+```{r}
+# Females
+m.f <- filter(pheno, sex == "Female" & !is.na(hc.statin))
+
+my.log1 <- glm(hc.statin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+tc.age+tc.age2, data = m.f, family = "binomial")
+my.log2 <- glm(hc.statin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+tc.age+tc.age2+tc.pgs, data = m.f, family = "binomial")
+
+m.f$prob1 <- predict(my.log1, type = "response")
+m.f$prob2 <- predict(my.log2, type = "response")
+
+g <- roc(hc.statin ~ prob1, data = m.f)
+h <- roc(hc.statin ~ prob2, data = m.f)
+
+roc.test(g, h)
+```
+
+### Males
+```{r}
+m.m <- filter(pheno, sex == "Male" & !is.na(hc.statin))
+
+my.log3 <- glm(hc.statin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+tc.age+tc.age2, data = m.m, family = "binomial")
+my.log4 <- glm(hc.statin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+tc.age+tc.age2+tc.pgs, data = m.m, family = "binomial")
+
+m.m$prob3 <- predict(my.log3, type = "response")
+m.m$prob4 <- predict(my.log4, type = "response")
+
+j <- roc(hc.statin ~ prob3, data = m.m)
+k <- roc(hc.statin ~ prob4, data = m.m)
+
+roc.test(j, k)
+```
+
+## Plots
+```{r, echo = FALSE, fig.height=4.5}
+ggroc(list("F; covariates" = g, "F; covariates + TC-PGS" = h, 
+           "M; covariates" = j, "M; covariates + TC_PGS" = k), size = 1) +
+        scale_color_viridis_d(option = "E") +
+        annotate(x = 0, y = 0, 
+                 geom = "text", 
+                 label = paste("AUC:\nF; covariates: ", round(g$auc, 3), 
+                           "\nF; covariates + PGS: ",round(h$auc, 3),
+                           "\nM; covariates: ", sprintf("%.3f", round(j$auc, 3)), 
+                           "\nM; covariates + PGS: ", round(k$auc, 3), sep = ""), 
+                 hjust = 1, vjust = 0) +
+         my.theme +
+    theme(legend.position = "right")
+```
+
+## Save data
+```{r}
+save(list = c("g", "h", "j", "k"), file = "prad_hypchol.RData")
+```
+

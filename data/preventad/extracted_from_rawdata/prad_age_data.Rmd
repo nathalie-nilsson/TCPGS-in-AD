@@ -1,0 +1,122 @@
+---
+title: "Log of 'prad_age_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADPREVENT/Patient_data/DATA_RELEASE_5.0_20171130/raw_data/dataDump01Dec17/nn_xlsx/" 
+```
+`r raw.dir`
+
+Note that data are  collected from PREVENT-AD data release 5.0.
+
+### Raw data files
+Paths relative to raw data directory (files and names are exactly the same as raw data files, just converted to '.xlsx' format):
+```{r}
+bl.file <- "baseline.xlsx"
+fu.file <- "follow_up.xlsx"
+dob.file <- "cdr.xlsx"
+mri.file <- "mri_feedbacks_ASL.xlsx"
+```
+
+## Libraries
+```{r}
+library(openxlsx)
+library(tidyverse)
+```
+
+## Read & clean data
+
+### Baseline data
+```{r}
+colnames(read.xlsx(paste(raw.dir, bl.file, sep = "")))[1:20]
+```
+
+```{r}
+bl <- read.xlsx(paste(raw.dir, bl.file, sep = "")) %>%
+    select(iid = PSCID, visit = Visit_label, Candidate_Age, date = Date_taken) %>%
+    mutate(age = Candidate_Age/12) %>%
+    unique()
+summary(bl)
+```
+
+### Follow up data
+```{r}
+colnames(read.xlsx(paste(raw.dir, fu.file, sep = "")))[1:20]
+```
+
+```{r}
+fu <- read.xlsx(paste(raw.dir, fu.file, sep = "")) %>%
+    select(iid = PSCID, visit = Visit_label, Candidate_Age, date = Date_taken) %>%
+    mutate(age = Candidate_Age/12)
+summary(fu)
+```
+
+### DOB data
+```{r}
+colnames(read.xlsx(paste(raw.dir, dob.file, sep = "")))
+
+dob <- read.xlsx(paste(raw.dir, dob.file, sep = "")) %>%
+    mutate(dob = as.Date(`4_birthdate_date`)) %>%
+    select(iid = PSCID, dob) %>%
+    unique()
+```
+
+### MRI file
+```{r}
+colnames(read.xlsx(paste(raw.dir, mri.file, sep = "")))
+
+mri <- read.xlsx(paste(raw.dir, mri.file, sep = "")) %>%
+    mutate(date = as.Date(MRI_Acquisition_Date)) %>%
+    select(iid = PSCID, visit = Visit_label, date) %>%
+    merge.data.frame(dob) %>%
+    mutate(age = as.numeric(as.character((date - dob)/365.25)))
+```
+
+### Combine data
+```{r}
+m <- rbind.data.frame(bl, fu) %>%
+    unique() %>%
+    select(-Candidate_Age) %>%
+    merge.data.frame(mri, by = c("iid", "visit"), suffixes = c(".v", ".mri"), all = TRUE) 
+
+# calculate new age
+m$age <- apply(select(m, age.v, age.mri), 1, function(x) if(!is.na(x[1])) {x[1]} else {x[2]})
+
+m.l <- select(m, iid, visit, age) %>% unique()
+
+m.w <- spread(m.l, key = visit, value = age)
+sum(duplicated(m.w$iid))
+```
+
+## Write data
+```{r}
+write.table(m.l, file = "prad_age_data_long.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+write.table(m.w, file = "prad_age_data_wide.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+```
+

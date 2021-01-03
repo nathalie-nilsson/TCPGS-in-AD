@@ -1,0 +1,96 @@
+---
+title: "Log of 'adni_tc_data.txt'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+`r raw.dir`
+
+### Raw data files
+```{r input}
+key.file <- "ROSTER.csv"
+reg.file <- "REGISTRY.csv"
+lab.file <- "LABDATA.csv" 
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Key data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+head(key)
+```
+
+## Registry data
+```{r}
+colnames(read.csv(paste(raw.dir, reg.file, sep = ""), header = TRUE))
+reg <- read.csv(paste(raw.dir, reg.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(Phase, RID, IID, VISCODE2, EXAMDATE) %>%
+    unique()
+summary(reg)
+
+# Replace emtpy cells with NAs
+reg[reg == ""] <- NA
+
+filter(reg, is.na(VISCODE2))
+
+reg.cc <- reg[complete.cases(reg), ] %>%
+    mutate(reg.examdate = as.Date(EXAMDATE)) %>%
+    select(-EXAMDATE)
+summary(reg.cc)
+```
+
+## Lab data
+```{r}
+colnames(read.csv(paste(raw.dir, lab.file, sep = ""), header = TRUE))
+lab <- read.csv(paste(raw.dir, lab.file, sep = ""), header = TRUE) %>%
+    select(Phase, RID, VISCODE2, RCT20)
+summary(lab)
+
+lab[lab == -1 | lab == ""] <- NA
+summary(lab)
+
+lab.cl <- lab %>%
+    merge.data.frame(reg.cc) %>%
+    select(PHASE = Phase, IID, VISCODE2, tc.date = reg.examdate, RCT20) %>%
+    mutate(tc.mM = as.numeric(as.character(RCT20))/38.67) %>%
+    filter(!is.na(tc.mM)) %>%
+    unique()
+summary(lab.cl)
+```
+
+## Write data
+```{r}
+write.table(lab.cl, file = "adni_tc_data.txt", row.names = FALSE, quote = FALSE, sep = "\t")
+```

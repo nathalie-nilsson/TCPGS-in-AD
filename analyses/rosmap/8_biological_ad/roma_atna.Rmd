@@ -1,0 +1,100 @@
+---
+title: "ATN(A) ~ TC-PGS in ROSMAP"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+...
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/rosmap/rosmap_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(rcompanion)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+colnames(pheno)
+```
+
+## ATN(A) risk
+
+### Data
+```{r}
+atn <- pheno %>%
+    filter(!is.na(cerad.bin) & !is.na(tc.pgs)) %>%
+    mutate(sex = factor(sex.f, levels = c(0, 1), labels = c("Male", "Female"))) %>%
+    select(iid, PC1:PC10, sex, apoe4.status, age, cerad.bin, tc.pgs)
+```
+
+**Missing data**
+```{r}
+apply(atn, 2, function(x) sum(is.na(x)))
+```
+
+Missing data on APOE4 status for one individual. Individual excluded.
+```{r}
+atn.cc <-na.omit(atn)
+```
+
+### Descriptives
+```{r}
+desc.stat <- sum.stat(atn.cc, strat_by = "sex", 
+         cont_variables = c("age", "tc.pgs"), 
+         disc_variables = c("apoe4.status", "cerad.bin"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+### Statistical analyses
+```{r}
+atn.formula <- as.formula("cerad.bin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age+apoe4.status+sex*tc.pgs")
+atn.glm <- glm(atn.formula, data = atn.cc, family = "binomial")
+summary(atn.glm)
+```
+
+#### R2 value
+```{r}
+nagelkerke(atn.glm)$Pseudo.R.squared.for.model.vs.null[3]
+```
+
+#### Odds ratios
+```{r}
+atn.formula.or <- as.formula("cerad.bin~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age+apoe4.status+tc.pgs")
+atn.f <- filter(atn.cc, sex == "Female")
+atn.m <- filter(atn.cc, sex == "Male")
+
+rbind("Female OR" = exp(coef(glm(atn.formula.or, data = atn.f, family = "binomial")))["tc.pgs"], 
+      "Male OR" = exp(coef(glm(atn.formula.or, data = atn.m, family = "binomial")))["tc.pgs"])
+```
+

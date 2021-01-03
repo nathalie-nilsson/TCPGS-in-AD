@@ -1,0 +1,107 @@
+---
+title: 'Hypercholesterolemia ~ TC-PGS'
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig.width: 6.5
+    highlight: textmate
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R version
+```{r, echo=FALSE}
+R.version
+```
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Input
+
+#### PREVENT-AD data
+```{r}
+prad.data <- "analyses/preventad/4_tc_roc/prad_hypchol.RData"
+```
+
+#### ADNI data
+```{r}
+adni.data <- "analyses/adni/v2_prad_snps/4_tc_roc/adni_hypchol.RData"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(pROC)
+
+source("~/Research/Projects/thesis_tc_pgs_in_AD/scripts/project_functions.R")
+source("~/PhD_milestones/PhD thesis/figures/plot_parameters_for_thesis.R")
+```
+
+## Data
+
+### PREVENT-AD
+```{r}
+load(paste(path.to.project, prad.data, sep = ""), verbose = TRUE)
+prad.g <- g
+prad.h <- h
+prad.j <- j
+prad.k <- k
+rm(g, h, j, k)
+```
+
+### ADNI
+```{r}
+load(paste(path.to.project, adni.data, sep = ""), verbose = TRUE)
+adni.g <- g
+adni.h <- h
+adni.j <- j
+adni.k <- k
+rm(g, h, j, k)
+```
+
+## Plotting
+```{r, fig.height=3.5}
+p.prad <- ggroc(list("F; covariates" = prad.g, "F; covariates + TC-PGS" = prad.h, 
+           "M; covariates" = prad.j, "M; covariates + TC_PGS" = prad.k), size = 1) +
+        scale_color_viridis_d(option = "E") +
+        annotate(x = 0, y = 0, 
+                 geom = "text", 
+                 label = paste("AUC:\nF; covariates: ", round(prad.g$auc, 3), 
+                           "\nF; covariates + PGS: ",round(prad.h$auc, 3),
+                           "\nM; covariates: ", sprintf("%.3f", round(prad.j$auc, 3)), 
+                           "\nM; covariates + PGS: ", round(prad.k$auc, 3), sep = ""), 
+                 hjust = 1, vjust = 0, size = 2.7) +
+         my.theme +
+    theme(legend.position = "bottom")
+
+p.adni <- ggroc(list("F; covariates" = adni.g, "F; covariates + TC-PGS" = adni.h, 
+           "M; covariates" = adni.j, "M; covariates + TC_PGS" = adni.k), size = 1) +
+        scale_color_viridis_d(option = "E") +
+        annotate(x = 0, y = 0, 
+                 geom = "text", 
+                 label = paste("AUC:\nF; covariates: ", round(adni.g$auc, 3), 
+                           "\nF; covariates + PGS: ",round(adni.h$auc, 3),
+                           "\nM; covariates: ", sprintf("%.3f", round(adni.j$auc, 3)), 
+                           "\nM; covariates + PGS: ", round(adni.k$auc, 3), sep = ""), 
+                 hjust = 1, vjust = 0, size = 2.7) +
+         my.theme +
+    theme(legend.position = "bottom")
+
+p <- arrangeGrob(p.prad, p.adni, ncol = 2)
+grid.arrange(p)
+```
+
+```{r}
+ggsave("hypchol.pdf", plot = p, width = 6.5, height = 3.5)
+```
+

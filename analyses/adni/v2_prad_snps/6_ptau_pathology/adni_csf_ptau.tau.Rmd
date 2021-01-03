@@ -1,0 +1,151 @@
+---
+title: "CSF p-tau at baseline ~ TC pgs in ADNI"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/adni/adni_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+summary(pheno)
+```
+
+### Filter data for presence of CSF data & family history
+```{r}
+csf <- filter(pheno, !is.na(bl.csf.ptau) & fh.ad == 1 & !is.na(tc.pgs)) %>%
+    mutate(csf.ptau.tau = bl.csf.ptau/bl.csf.tau) %>%
+    select(iid, tc.pgs, sex = sex.f, apoe4.status, age = bl.age, statin = statin.sc.bl, 
+           bl.dx, csf.ptau.tau, tc.mM = sc.tc.mM, PC1:PC10)
+summary(csf)
+```
+
+Missing data for 31 individuals on statin use. These are excluded because included as a variable in the regression. 
+
+### Factorize data
+```{r}
+csf.f <- filter(csf, !is.na(statin))
+csf.f$apoe4.status <- factor(csf.f$apoe4.status, levels = c(0, 1), labels = c("APOE4_neg", "APOE4_pos"))
+csf.f$sex <- factor(csf.f$sex, levels = c(0, 1), labels = c("Male", "Female"))
+csf.f$statin <- factor(csf.f$statin, levels = c(0, 1), labels = c("Statin_neg", "Statin_pos"))
+
+# data for descriptives
+m.dt <- filter(csf, !is.na(statin))
+m.dt$sex <- factor(m.dt$sex, levels = c(0, 1), labels = c("Male", "Female"))
+```
+
+
+## Descriptives
+```{r}
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("age", "tc.mM", "tc.pgs", "csf.ptau.tau"), 
+         disc_variables = c("statin", "apoe4.status"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## EDA
+
+#### TC-PGS distribution
+```{r}
+grid.arrange(
+    ggplot(csf.f, aes(tc.pgs)) + 
+        geom_histogram(data = filter(csf.f, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.f, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.f, aes(tc.pgs, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+#### CSF distribution
+```{r}
+grid.arrange(
+    ggplot(csf.f, aes(csf.ptau.tau)) + 
+        geom_histogram(data = filter(csf.f, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.f, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.f, aes(csf.ptau.tau, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+Data look normally distributed. 
+
+## TC-PGS effect on PET data
+
+### Linear regression - All individuals
+
+**Statistics**
+```{r}
+formula.1 <- as.formula("csf.ptau.tau ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age + apoe4.status + statin * sex * tc.pgs")
+linreg.1 <- lm(formula.1, data = csf.f)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.1)
+```
+
+Results:
+```{r}
+summary(linreg.1)
+```
+
+**Plotting**
+```{r, echo=FALSE}
+ggplot(csf.f, aes_string(x = "tc.pgs", y = "csf.ptau.tau", color = "sex")) +
+    geom_point(size = 3) +
+    geom_smooth(method = "lm", se = FALSE) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    facet_grid(~statin) +
+    my.theme
+```
+
+## Save data
+```{r}
+save(list = c("csf.f", "desc.stat"), file = "adni_csf_ptau.tau.RData")
+```
+

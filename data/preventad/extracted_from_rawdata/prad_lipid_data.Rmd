@@ -1,0 +1,96 @@
+---
+title: "Log of 'prad_lipid_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADPREVENT/Patient_data/DATA_RELEASE_5.0_20171130/raw_data/dataDump01Dec17/nn_xlsx/" 
+```
+`r raw.dir`
+
+Note that data are  collected from PREVENT-AD data release 5.0.
+
+### Raw data files
+Paths relative to raw data directory (files and names are exactly the same as raw data files, just converted to '.xlsx' format):
+```{r}
+data.file <- "lab.xlsx"
+```
+
+## Libraries
+```{r}
+library(openxlsx)
+library(tidyverse)
+```
+
+## Read & clean data
+
+**Raw data columns**
+```{r}
+data.file <- paste(raw.dir, data.file, sep = "")
+read.xlsx(data.file) %>%
+  colnames()
+```
+
+**Filtered data**
+```{r}
+tc.data <- read.xlsx(data.file) %>%
+    mutate(tc.age = Candidate_Age/12) %>%
+  select(iid = PSCID, 
+         visit = Visit_label, 
+         tc.age, 
+         tc.date = Date_taken, 
+         tg.mM = lipid_triglycerides_result, 
+         tc.mM = lipid_cholesterol_result, 
+         ldl.mM = lipid_LDL_result, 
+         hdl.mM = lipid_HDL_result)
+```
+
+Non-HDL cholesterol levels calculated as TC - HDL according to Langsted & Nordestgaard 2019 (Pathology)
+```{r}
+tc.data$nonhdl.mM = tc.data$tc.mM - tc.data$hdl.mM
+
+head(tc.data)
+
+summary(tc.data)
+```
+
+**Number of measurements per visit**
+```{r}
+tc.data.g <- group_by(tc.data, visit) %>%
+  summarise(n.tg = sum(!is.na(tg.mM)), 
+            n.tc = sum(!is.na(tc.mM)),
+            n.ldl = sum(!is.na(ldl.mM)),
+            n.hdl = sum(!is.na(hdl.mM)), 
+            n.nonhdl = sum(!is.na(nonhdl.mM)))
+tc.data.g
+```
+
+## Write data
+```{r}
+write.table(tc.data, file = "prad_lipid_data.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+```
+

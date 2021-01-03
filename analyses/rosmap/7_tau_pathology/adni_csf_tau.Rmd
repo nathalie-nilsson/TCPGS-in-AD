@@ -1,0 +1,169 @@
+---
+title: "CSF TAU at baseline ~ TC-PGS in ADNI"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+ADNI is better powered than PREVENT-AD, thus including all covariates and the full statin x sex x TC-PGS term. 
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/adni/adni_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+summary(pheno)
+```
+
+### Filter data for presence of CSF data
+```{r}
+csf <- filter(pheno, !is.na(bl.csf.tau) & fh.ad == 1 & !is.na(tc.pgs)) %>%
+    select(iid, PC1:PC10, sex = sex.f, apoe4.status, statin = statin.sc.bl, tc.mM = sc.tc.mM, 
+           age = bl.age, csf.tau = bl.csf.tau, tc.pgs)
+```
+
+**Missing data**
+```{r}
+apply(csf, 2, function(x) sum(is.na(x)))
+```
+
+Missing TC data for three individuals and statin data for 31 individuals. Excluding individuals with no statin data because variable included as covariate in analysis, keeping individual with missing TC data because only used for descriptives.  
+```{r}
+csf.cc <- filter(csf, !is.na(statin)) %>%
+    mutate(sex = factor(sex, levels = c(0, 1), labels = c("Male", "Female")))
+```
+
+## Descriptives
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- csf.cc
+
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("age", "tc.mM", "tc.pgs", "csf.tau"), 
+         disc_variables = c("statin", "apoe4.status"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## EDA
+
+#### TC-PGS distribution
+```{r}
+grid.arrange(
+    ggplot(csf.cc, aes(tc.pgs)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(tc.pgs, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+#### CSF p-tau distribution
+```{r}
+grid.arrange(
+    ggplot(csf.cc, aes(csf.tau)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(csf.tau, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+Data are right skewed. Trying a log transformation:
+```{r}
+csf.cc$log2.csf.tau <- log2(csf.cc$csf.tau)
+
+grid.arrange(
+    ggplot(csf.cc, aes(log2.csf.tau)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff", alpha = 0.5) +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff", alpha = 0.5) +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(log2.csf.tau, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+## TC-PGS effect on CSF data
+
+### Linear regression - All individuals
+
+**Statistics**
+```{r}
+formula.1 <- as.formula("log2.csf.tau ~ PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age + apoe4.status + statin * sex * tc.pgs")
+linreg.1 <- lm(formula.1, data = csf.cc)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.1)
+```
+
+Results:
+```{r}
+summary(linreg.1)
+```
+
+**Plotting**
+```{r, echo=FALSE, fig.width=3.25}
+ggplot(csf.cc, aes_string(x = "tc.pgs", y = "csf.tau", color = "sex")) +
+    geom_point(size = 3) +
+    geom_smooth(method = "lm", se = FALSE) +
+    scale_y_continuous(trans = "log2") +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    my.theme
+```
+
+## Save data
+```{r}
+save(list = c("csf.cc", "desc.stat"), file = "prad_csf_tau.RData")
+```
+

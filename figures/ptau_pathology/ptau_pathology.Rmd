@@ -1,0 +1,207 @@
+---
+title: 'p-TAU pathology ~ TC-PGS'
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig.width: 6.5
+    highlight: textmate
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R version
+```{r, echo=FALSE}
+R.version
+```
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Input
+
+#### PREVENT-AD data
+```{r}
+prad.ptau.data <- "analyses/preventad/6_ptau_pathology/prad_csf_ptau.RData"
+prad.r.data <- "analyses/preventad/6_ptau_pathology/prad_csf_ptau.tau.RData"
+prad.pet.data <- "analyses/preventad/6_ptau_pathology/prad_pet_tau.RData"
+```
+
+#### ADNI data
+```{r}
+adni.ptau.data <- "analyses/adni/v2_prad_snps/6_ptau_pathology/adni_csf_ptau.RData"
+adni.r.data <- "analyses/adni/v2_prad_snps/6_ptau_pathology/adni_csf_ptau.tau.RData"
+```
+
+#### Output
+```{r}
+output.name <- "ptau_pathology"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(cowplot)
+
+source("~/Research/Projects/thesis_tc_pgs_in_AD/scripts/project_functions.R")
+source("~/PhD_milestones/PhD thesis/figures/plot_parameters_for_thesis.R")
+```
+
+## Data
+
+### PREVENT-AD
+```{r}
+load(paste(path.to.project, prad.ptau.data, sep = ""), verbose = TRUE)
+p.ptau <- csf %>%
+    mutate(data.type = "CSF p-TAU") %>%
+    filter(!is.na(apoe4.status))
+p.ptau.desc <- desc.stat
+rm(csf, desc.stat)
+levels(p.ptau$sex)
+
+p.ptau$sex <- relevel(p.ptau$sex, ref = "Male")
+```
+```{r}
+load(paste(path.to.project, prad.r.data, sep = ""), verbose = TRUE)
+p.r <- csf %>%
+    mutate(data.type = "CSF p-TAU/TAU ratio") %>%
+    filter(!is.na(apoe4.status))
+p.r.desc <- desc.stat
+rm(csf, desc.stat)
+
+levels(p.r$sex)
+
+p.r$sex <- relevel(p.r$sex, ref = "Male")
+```
+
+```{r}
+load(paste(path.to.project, prad.pet.data, sep = ""), verbose = TRUE)
+p.pet <- pet.cc %>%
+    mutate(data.type = "TAU PET")
+p.pet.desc <- desc.stat
+rm(pet.cc, desc.stat)
+
+levels(p.pet$sex)
+```
+
+### ADNI
+```{r}
+load(paste(path.to.project, adni.ptau.data, sep = ""), verbose = TRUE)
+a.ptau <- csf.f %>%
+    mutate(data.type = "CSF p-TAU")
+a.ptau.desc <- desc.stat
+rm(desc.stat, csf.f)
+
+levels(a.ptau$sex)
+```
+
+```{r}
+load(paste(path.to.project, adni.r.data, sep = ""), verbose = TRUE)
+a.r <- csf.f %>%
+    mutate(data.type = "CSF p-TAU/TAU ratio")
+a.r.desc <- desc.stat
+rm(desc.stat, csf.f)
+
+levels(a.r$sex)
+```
+## Plotting
+
+#### PRAD CSF p-TAU
+```{r, fig.height=3.5}
+plot.prad.ptau <- ggplot(p.ptau, aes(tc.pgs, csf.ptau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    scale_shape_manual(values = c(0, 5)) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    my.theme.bar.no.legend +
+    labs(title = "(A) PREVENT-AD CSF p-TAU levels") +
+    ylab("CSF p-TAU [pg/ml]") +
+    xlab("Standardized TC-PGS")
+plot.prad.ptau
+```
+
+#### PRAD CSF p-TAU/TAU ratio
+```{r}
+plot.prad.r <- ggplot(p.r, aes(tc.pgs, csf.ptau.tau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_shape_manual(values = c(0, 5)) +
+    my.theme.bar.no.legend +
+    labs(title = " ") +
+    ylab("CSF p-TAU/TAU [ratio]") +
+    xlab("Standardized TC-PGS")
+plot.prad.r
+```
+
+#### PRAD TAU PET
+```{r}
+plot.prad.pet <- ggplot(p.pet, aes(tc.pgs, pettau.etx, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_shape_manual(values = c(0, 5)) +
+    my.theme.bar.no.legend +
+    #facet_grid(~data.type) +
+    labs(title = "(B) PREVENT-AD PET TAU levels") +
+    ylab("TAU [SUVR]") +
+    xlab("Standardized TC-PGS")
+plot.prad.pet
+```
+
+#### ADNI CSF p-TAU levels
+```{r}
+plot.adni.ptau <- ggplot(a.ptau, aes(tc.pgs, csf.ptau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_shape_manual(values = c(0, 5)) +
+    facet_grid(~statin) +
+    my.theme.bar.no.legend +
+    scale_y_continuous(trans = "log2", breaks = c(9.9, 16.0, 32, 64.0)) +
+    labs(title = "(C) ADNI CSF p-TAU levels") +
+    ylab("CSF p-TAU [pg/ml] (log2 scale)") +
+    xlab("Standardized TC-PGS")
+plot.adni.ptau
+```
+
+#### ADNI CSF p-TAU/TAU levels
+```{r}
+plot.adni.r <- ggplot(a.r, aes(tc.pgs, csf.ptau.tau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_shape_manual(values = c(0, 5)) +
+    facet_grid(~statin) +
+    my.theme.bar.no.legend +
+    #scale_y_continuous(trans = "log2") +
+    ylab("CSF p-TAU/TAU [ratio]") +
+    xlab("Standardized TC-PGS")
+plot.adni.r
+```
+#### Summary plot
+```{r, fig.height=7, fig.width=6.5}
+plots <- align_plots(plot.prad.ptau, plot.adni.ptau, plot.adni.r, align = 'v', axis = 'l')
+p <- plot_grid(plot_grid(plots[[1]], plot.prad.r), plot.prad.pet, 
+               plots[[2]], NULL, 
+               plots[[3]], NULL, 
+               ncol = 2, nrow = 3, rel_widths = c(2, 1), align = "h")
+p
+```
+
+```{r}
+ggsave(paste(output.name, ".pdf", sep = ""), plot = p, width = 6.5, height = 7)
+```
+

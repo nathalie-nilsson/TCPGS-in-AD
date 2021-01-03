@@ -1,0 +1,123 @@
+---
+title: 'Biomarkers of neurodegeneration ~ TC-PGS'
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig.width: 6.5
+    highlight: textmate
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R version
+```{r, echo=FALSE}
+R.version
+```
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Input
+
+#### PREVENT-AD data
+```{r}
+prad.tau.data <- "analyses/preventad/7_tau_pathology/prad_csf_tau.RData"
+```
+
+#### ADNI data
+```{r}
+adni.tau.data <- "analyses/adni/v2_prad_snps/7_tau_pathology/adni_csf_tau.RData"
+```
+
+#### Output
+```{r}
+output.name <- "neurodegeneration"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(cowplot)
+
+source("~/Research/Projects/thesis_tc_pgs_in_AD/scripts/project_functions.R")
+source("~/PhD_milestones/PhD thesis/figures/plot_parameters_for_thesis.R")
+```
+
+## Data
+
+### PREVENT-AD
+```{r}
+load(paste(path.to.project, prad.tau.data, sep = ""), verbose = TRUE)
+p.tau <- csf.cc %>%
+    mutate(data.type = "CSF TAU")
+p.tau.desc <- desc.stat
+rm(csf.cc, desc.stat)
+levels(p.tau$sex)
+```
+
+### ADNI
+```{r}
+load(paste(path.to.project, adni.tau.data, sep = ""), verbose = TRUE)
+a.tau <- csf.cc %>%
+    mutate(data.type = "CSF TAU")
+a.tau$statin <- factor(a.tau$statin, levels = c(0, 1), labels = c("Statin_neg", "Statin_pos"))
+a.tau.desc <- desc.stat
+rm(desc.stat, csf.cc)
+
+levels(a.tau$sex)
+```
+
+## Plotting
+
+#### PRAD CSF TAU
+```{r, fig.height=3.5}
+plot.prad.tau <- ggplot(p.tau, aes(tc.pgs, csf.tau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    scale_shape_manual(values = c(0, 5)) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    my.theme.bar.no.legend +
+    facet_grid(~data.type) +
+    scale_y_continuous(trans = "log2") +
+    labs(title = "(A) PREVENT-AD CSF TAU levels") +
+    ylab("CSF TAU [pg/ml] (log2 scale)") +
+    xlab("Standardized TC-PGS")
+plot.prad.tau
+```
+
+#### ADNI CSF TAU levels
+```{r}
+plot.adni.tau <- ggplot(a.tau, aes(tc.pgs, csf.tau, color = sex, shape = sex)) +
+    geom_point(size = point.size) +
+    geom_smooth(method = "lm", alpha = 0.2, aes(fill = sex)) +
+    scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+    scale_shape_manual(values = c(0, 5)) +
+    facet_grid(~statin) +
+    my.theme.bar.no.legend +
+    labs(title = "(B) ADNI CSF TAU levels") +
+    ylab("CSF TAU [pg/ml]") +
+    xlab("Standardized TC-PGS")
+plot.adni.tau
+```
+
+#### Summary plot
+```{r, fig.height=2.33, fig.width=6.5}
+p <- plot_grid(plot.prad.tau, plot.adni.tau, 
+               ncol = 2, rel_widths = c(1, 2))
+p
+```
+
+```{r}
+ggsave(paste(output.name, ".pdf", sep = ""), plot = p, width = 6.5, height = 2.33)
+```
+

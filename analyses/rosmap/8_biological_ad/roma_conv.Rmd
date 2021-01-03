@@ -1,0 +1,102 @@
+---
+title: "TC pgs effect on conversion rate in ROSMAP"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 6
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+...
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/rosmap/rosmap_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(survival)
+library(ggfortify)
+library(survminer)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+source("~/Research/Methods/R Programming/Scripts/Stats/Quantiles.R")
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+colnames(pheno)
+```
+
+```{r}
+pheno.cc <- mutate(pheno, qs3 = my.quantile.function(tc.pgs, 3)) %>% 
+    filter(!is.na(tc.pgs) & cerad.bin == 1) %>%
+    select(iid, tc.pgs, sex.f, age.ad, cog.ad, qs3)
+
+ggplot(pheno.cc, aes(tc.pgs, qs3)) +
+    geom_point()
+```
+
+
+### Survival analysis
+
+#### Females
+```{r}
+pheno.f <- filter(pheno.cc, sex.f == 1)
+my.fit.f <- survfit(Surv(age.ad, cog.ad) ~ qs3, data = pheno.f)
+my.diff.f <- survdiff(Surv(age.ad, cog.ad) ~ qs3, data = pheno.f, rho = 0.5)
+my.diff.f
+
+pval.f <- pchisq(my.diff.f$chisq, length(my.diff.f$n)-1, lower.tail = FALSE) %>% signif(4)
+
+ggsurvplot(my.fit.f, ylim = c(0, 1), surv.size = 1, conf.int = FALSE, risk.table = TRUE, risk.table.y.text = FALSE,
+           break.time.by = 2, xlim = c(72, 90))
+```
+
+#### Males
+```{r}
+pheno.m <- filter(pheno.cc, sex.f == 0)
+my.fit.m <- survfit(Surv(age.ad, cog.ad) ~ qs3, data = pheno.m)
+my.diff.m <- survdiff(Surv(age.ad, cog.ad) ~ qs3, data = pheno.m, rho = 0.5)
+my.diff.m
+
+pval.m <- pchisq(my.diff.m$chisq, length(my.diff.m$n)-1, lower.tail = FALSE) %>% signif(4)
+
+ggsurvplot(my.fit.m, ylim = c(0, 1), surv.size = 1, conf.int = FALSE, risk.table = TRUE, risk.table.y.text = FALSE,
+           break.time.by = 2, xlim = c(72, 90))
+```
+
+## Save data
+```{r}
+pheno.f <- filter(pheno.cc, sex.f == 1)
+my.fit.f <- survfit(Surv(age.ad, cog.ad) ~ qs3, data = pheno.f)
+my.diff.f <- survdiff(Surv(age.ad, cog.ad) ~ qs3, data = pheno.f, rho = 0.5)
+my.diff.f
+
+pval.f 
+save(list = c("my.fit.f", "my.diff.f", "pval.f", "my.fit.m", "my.diff.m", "pval.m"), 
+     file = "roma_conv.RData")
+```
+

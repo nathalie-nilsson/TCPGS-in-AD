@@ -1,0 +1,108 @@
+---
+title: "Log of 'prad_pca_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADPREVENT/Patient_data/DATA_RELEASE_5.0_20171130/raw_data/dataDump01Dec17/nn_xlsx/" 
+```
+`r raw.dir`
+
+Note that data are  collected from PREVENT-AD data release 5.0.
+
+### Raw data files
+Paths relative to raw data directory (files and names are exactly the same as raw data files, just converted to '.xlsx' format):
+```{r}
+dr.5.file <- "candidate_info.xlsx"
+```
+
+### Genetic data
+```{r}
+pca.file <- "~/Research/Cohort_data/ADPREVENT/Genetic_data/PRAD_2019/pca-1kG_v3_ld/PCA_EUR/PCA/PRAD_2019_EUR_PCA.eigenvec"
+
+fam.file <- "~/Research/Cohort_data/ADPREVENT/Genetic_data/PRAD_2019/imputed/prad_2019_imp_eur.fam"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(openxlsx)
+```
+
+## Data
+
+### Data release 5.0 ids
+```{r}
+dr.5.ids <- read.xlsx(dr.5.file) %>%
+    rename(IID = PSCID) %>%
+    unique()
+nrow(dr.5.ids)
+summary(dr.5.ids)
+unique(dr.5.ids$SubprojectID)
+```
+Data release 5.0 contains a "Young" cohort. These are significantly younger than the rest of the cohort and will be excluded from the study. 
+
+```{r}
+dr5.old <- filter(dr.5.ids, SubprojectID != "Young") %>%
+    unique()
+```
+Thus, there are **`r nrow(dr5.old)`** individuals in data release 5.0 qualifying.
+
+### PC data
+```{r}
+pca <- read.table(pca.file, header = TRUE)
+summary(pca)
+```
+There are **`r nrow(pca)`** individuals with pca data.
+
+### .fam data
+```{r}
+fam <- read.table(fam.file) %>%
+    mutate(sex = V5 - 1) %>%
+    select(IID = V2, sex)
+summary(fam)
+```
+
+#### Merge data
+```{r}
+m <- merge.data.frame(pca, fam) %>%
+    merge.data.frame(score)
+
+m.f <- filter(m, IID %in% dr5.old$IID)
+```
+There are **`r nrow(m)`** individuals with both score and pca data (the one missing is due to that scoring was done with imputed data (from CP) and PC:s were calculated with QC:ed data set by NN). Of these **`r nrow(m.f)`** individuals have data in data release 5.0 (excluding the "Young" cohort).
+
+## Standardized scores
+```{r}
+m.f$tc.pgs <- scale(m.f$SCORE)
+```
+
+## Write data
+```{r}
+write.table(m.f, file = "prad_genetic_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```
+

@@ -1,0 +1,184 @@
+---
+title: "Log of 'adni_statin_data.txt'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+Collected from: `r raw.dir`
+
+### Raw data files
+```{r input}
+key.file <- "ROSTER.csv"
+reg.file <- "REGISTRY.csv"
+med.file <- "RECCMEDS.csv"
+```
+
+List of statin brand names:
+```{r}
+statin.brand.name.file <- "~/Research/Other_data/statin_brand_names.xlsx"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(openxlsx)
+```
+
+## Key data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+head(key)
+```
+
+## Registry data
+```{r}
+colnames(read.csv(paste(raw.dir, reg.file, sep = ""), header = TRUE))
+reg <- read.csv(paste(raw.dir, reg.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(Phase, RID, IID, VISCODE2, EXAMDATE) %>%
+    unique()
+summary(reg)
+
+# Replace emtpy cells with NAs
+reg[reg == ""] <- NA
+
+filter(reg, is.na(VISCODE2))
+
+reg.cc <- reg[complete.cases(reg), ] %>%
+    mutate(reg.examdate = as.Date(EXAMDATE)) %>%
+    select(-EXAMDATE)
+summary(reg.cc)
+
+
+```
+
+## Medication data
+
+#### Brand names
+
+```{r}
+brand <- read.xlsx(statin.brand.name.file, colNames = FALSE) 
+brand$X2
+brand.name <- sapply(brand$X2, function(x) strsplit(x, split = ", ")) %>% 
+    unlist(recursive = TRUE, use.names = FALSE)
+brand.name[order(brand.name)]
+```
+
+#### ADNI medication data
+```{r}
+colnames(read.csv(paste(raw.dir, med.file, sep = ""), header = TRUE))
+med <- read.csv(paste(raw.dir, med.file, sep = ""), header = TRUE) %>%
+    select(Phase, RID, VISCODE2, CMMED, CMBGN, CMEND) %>%
+    unique()
+summary(med)
+
+# Replace empty spaces and -4 with NAs
+med[med == "-4" | med == -4 | med == ""] <- NA
+summary(med)
+
+med.cl <- merge.data.frame(reg.cc, med) %>%
+    select(PHASE = Phase, RID, IID, drug.date = reg.examdate, VISCODE2, CMMED, CMBGN, CMEND) %>%
+    unique() %>%
+    mutate(MEDICATION = tolower(CMMED))
+head(med.cl)
+```
+
+#### Extracting brand names from ADNI data
+```{r}
+unique(med.cl$CMMED)
+
+statins <- med.cl$MEDICATION[grepl("statin", med.cl$MEDICATION)] %>%
+    unique()
+statins
+statins.brand <- med.cl$MEDICATION[grepl(paste(brand.name, collapse = "|"), med.cl$MEDICATION)] %>%
+    unique()
+
+statins.cl <- c(statins, "provachol", statins.brand)
+
+statins.df <- filter(med.cl, MEDICATION %in% c(NA, statins.cl)) %>%
+    select(PHASE, IID, VISCODE2, drug.date, MEDICATION, CMBGN, CMEND) %>%
+    mutate(statin = as.numeric(!is.na(MEDICATION))) %>%
+    unique()
+head(statins.df)
+```
+
+#### Screening visit statin data
+```{r}
+sc <- filter(statins.df, VISCODE2 == "sc") %>%
+    select(IID, statin.sc.date = drug.date, statin) %>%
+    unique()
+
+sum(duplicated(sc$IID))
+sc.dup <- filter(sc, IID %in% sc$IID[duplicated(sc$IID)])
+
+sc.unique <- group_by(sc, IID, statin.sc.date) %>% # getting rid of duplicate values
+    summarise(statin.sc = sum(statin)) %>%
+    unique()
+
+unique(sc.unique$statin.sc)
+sum(duplicated(sc.unique$IID))
+```
+
+#### Baseline visit statin data
+```{r}
+bl <- filter(statins.df, VISCODE2 == "bl") %>%
+    select(IID, statin.bl.date = drug.date, statin) %>%
+    unique()
+
+sum(duplicated(bl$IID))
+filter(bl, IID == "036_S_4389")
+
+bl.unique <- group_by(bl, IID, statin.bl.date) %>% # getting rid of duplicate values
+    summarise(statin.bl = sum(statin)) %>%
+    unique()
+
+unique(bl.unique$statin.bl)
+sum(duplicated(bl.unique$IID))
+```
+
+#### Statin ever use
+```{r}
+ev <- group_by(statins.df, IID) %>%
+    summarize(temp = sum(statin, na.rm = TRUE)) %>%
+    mutate(statin.everuse = as.numeric(temp > 0))
+sum(duplicated(ev$IID))
+```
+
+## Merge data
+```{r}
+m <- merge.data.frame(statins.df, sc.unique, all.x = TRUE) %>%
+    merge.data.frame(bl.unique, all.x = TRUE) %>%
+    merge.data.frame(ev, all.x = TRUE)
+```
+
+## Write data
+```{r}
+write.table(m, file = "adni_statin_data.txt", row.names = FALSE, quote = FALSE, sep = "\t")
+```

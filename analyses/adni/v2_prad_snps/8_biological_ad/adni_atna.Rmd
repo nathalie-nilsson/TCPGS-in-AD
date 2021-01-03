@@ -1,0 +1,103 @@
+---
+title: "ATN(A) ~ TC-PGS in ADNI"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+...
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/adni/adni_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+library(rcompanion)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+colnames(pheno)
+```
+
+No. of observations:
+```{r}
+filter(pheno, fh.ad == 1) %>%
+    group_by(statin.sc.bl, sex.f) %>%
+    summarise(n.tot = length(iid),
+              n.atn = sum(!is.na(lv.atn.a)), 
+              n.ad = sum(!is.na(lv.ad)), 
+              n.ci = sum(!is.na(lv.ci)))
+```
+
+## ATN(A) risk
+
+### Data
+```{r}
+atn <- pheno %>%
+    filter(fh.ad == 1 & !is.na(lv.atn.a) & !is.na(tc.pgs) & !is.na(statin.sc.bl)) %>%
+    mutate(sex = factor(sex.f, levels = c(0, 1), labels = c("Male", "Female"))) %>%
+    select(iid, PC1:PC10, statin = statin.sc.bl, sex, apoe4.status, tc.mM = sc.tc.mM, age = lv.csf.age, lv.atn.a, tc.pgs)
+```
+
+### Descriptives
+```{r}
+desc.stat <- sum.stat(atn, strat_by = "sex", 
+         cont_variables = c("age", "tc.mM", "tc.pgs"), 
+         disc_variables = c("statin", "apoe4.status", "lv.atn.a"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+### Statistical analyses
+```{r}
+atn.formula <- as.formula("lv.atn.a~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age+apoe4.status+statin*sex*tc.pgs")
+atn.glm <- glm(atn.formula, data = atn, family = "binomial")
+summary(atn.glm)
+```
+#### R2 value
+```{r}
+nagelkerke(atn.glm)$Pseudo.R.squared.for.model.vs.null[3]
+```
+
+#### Odds ratios
+```{r}
+atn.formula.or <- as.formula("lv.atn.a~PC1+PC2+PC3+PC4+PC5+PC6+PC7+PC8+PC9+PC10+age+apoe4.status+tc.pgs")
+atn.snf <- filter(atn, statin == 0 & sex == "Female")
+atn.spf <- filter(atn, statin == 1 & sex == "Female")
+atn.snm <- filter(atn, statin == 0 & sex == "Male")
+atn.spm <- filter(atn, statin == 1 & sex == "Male")
+
+rbind("Statin(-).F.OR" = exp(coef(glm(atn.formula.or, data = atn.snf, family = "binomial")))["tc.pgs"], 
+      "Statin(+).F.OR" = exp(coef(glm(atn.formula.or, data = atn.spf, family = "binomial")))["tc.pgs"], 
+      "Statin(-).M.OR" = exp(coef(glm(atn.formula.or, data = atn.snm, family = "binomial")))["tc.pgs"], 
+      "Statin(+).M.OR" = exp(coef(glm(atn.formula.or, data = atn.spm, family = "binomial")))["tc.pgs"])
+```
+

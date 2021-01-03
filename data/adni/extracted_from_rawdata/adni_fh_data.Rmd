@@ -1,0 +1,111 @@
+---
+title: "Log of 'adni_demog_data'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+`r raw.dir`
+
+### Raw data files
+```{r input}
+key.file <- "ROSTER.csv"
+fhq.file <- "FHQ.csv" # parental AD history
+sib.file <- "RECFHQ.csv" # sibling AD history
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Data
+
+#### Key data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+```
+
+#### Parental data
+
+Parental history of AD is located in columns "FHQDADAD" & "FHQMOMAD" (for dad and mom respectively), with the following values: 1=Yes; 0=No; 2=Don't Know.
+```{r}
+par <- read.csv(paste(raw.dir, fhq.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(IID, dad.ad = FHQDADAD, mom.ad = FHQMOMAD) %>%
+    unique()
+summary(par)
+```
+
+#### Sibling data
+
+AD history in siblings are recorded in "FHQSIBAD" column with the following values: 1=Yes; 0=No; 2=Don't Know
+
+```{r}
+sib <- read.csv(paste(raw.dir, sib.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key) %>%
+    select(IID, sib.ad = FHQSIBAD) %>%
+    unique()
+summary(sib)
+```
+
+#### Merged data
+```{r}
+m <- merge.data.frame(par, sib, all = TRUE) %>%
+    unique()
+
+apply(m[, -1], 2, unique)
+```
+
+In addition to 0, 1 and 2, data also contains "-1" and "-4". These will be treated as missing similar to 2. 
+
+#### Family history variable
+Creating fh.ad column coded 1 for known AD family history in either mom, dad or sibling. Others are coded NA.
+```{r}
+m$fh.ad <- apply(m[, -1], 1, function(x) {
+    if("1" %in% x) {1}
+    else {NA}
+})
+
+m.f <- m %>%
+    filter(fh.ad == 1) %>%
+    select(IID, fh.ad) %>%
+    unique()
+```
+
+#### Duplicate check
+```{r}
+sum(duplicated(m.f$IID))
+```
+
+## Write data
+```{r}
+write.table(m.f, file = "adni_fh_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```

@@ -1,0 +1,57 @@
+---
+title: "Log of 'roma_descriptives'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+```{r}
+roma.file <- "data/rosmap/rosmap_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data 
+```{r}
+roma <- read.within.project.h(roma.file)
+summary(roma)
+colnames(roma)
+```
+
+## Descriptives
+```{r}
+roma$sex <- factor(roma$sex.f, levels = c(0, 1), labels = c("Male", "Female"))
+
+roma.desc <- sum.stat(roma, "sex", c("age", "tc.pgs"), c("apoe4.status", "cog.ci"))
+roma.desc
+```
+
+```{r}
+roma.desc[, 3:7] <- round(roma.desc[, 3:7], 2)
+roma.desc
+```
+

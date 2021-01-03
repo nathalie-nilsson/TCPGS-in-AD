@@ -1,0 +1,63 @@
+---
+title: "Log of 'adni_descriptives'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+```{r}
+adni.file <- "data/adni/adni_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data 
+```{r}
+adni <- read.within.project.h(adni.file)
+summary(adni)
+colnames(adni)
+```
+
+```{r}
+adni.f <- filter(adni,!is.na(tc.pgs) & fh.ad == 1)
+summary(adni.f)
+colnames(adni.f)
+```
+
+## Descriptives
+```{r}
+adni.f$sex <- factor(adni.f$sex.f, levels = c(0, 1), labels = c("Male", "Female"))
+
+adni.desc <- sum.stat(adni.f, "sex", c("tc.age", "sc.tc.mM", "bl.age", "bl.csf.ab42", "bl.csf.tau", "bl.csf.ptau", "tc.pgs", "lv.age"), c("statin.sc.bl", "apoe4.status", "lv.ci"))
+adni.desc
+```
+
+```{r}
+adni.desc[, 3:7] <- round(adni.desc[, 3:7], 2)
+adni.desc
+```
+

@@ -1,0 +1,164 @@
+---
+title: 'TC-PGS p-value thresholding'
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig.width: 6.5
+    highlight: textmate
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R version
+```{r, echo=FALSE}
+R.version
+```
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Input
+
+#### PREVENT-AD data
+```{r}
+my.range.list.file <- "analyses/preventad/1_pg_scoring/scoring_range.txt"
+
+statin.all.file <- "analyses/preventad/2_tc_bootstrap_statinsplit/prad_tc_boot_statinsplit_Results.txt"
+statin.n.file <- "analyses/preventad/2_tc_bootstrap_statinsplit/prad_tc_boot_statinsplit_Statin_neg_Results.txt"
+statin.p.file <- "analyses/preventad/2_tc_bootstrap_statinsplit/prad_tc_boot_statinsplit_Statin_pos_Results.txt"
+
+sex.all.file <- "analyses/preventad/3_tc_bootstrap_sexsplit/prad_tc_boot_sexsplit_Results.txt"
+sex.f.file <- "analyses/preventad/3_tc_bootstrap_sexsplit/prad_tc_boot_sexsplit_Female_Results.txt"
+sex.m.file <- "analyses/preventad/3_tc_bootstrap_sexsplit/prad_tc_boot_sexsplit_Male_Results.txt"
+```
+
+#### ADNI data
+```{r}
+adni.statin.data <- "analyses/adni/v2_prad_snps/2_tc_bootstrap_statinsplit/adni_tc_boot_statinsplit.RData"
+adni.sex.data <- "analyses/adni/v2_prad_snps/3_tc_bootstrap_sexsplit/adni_tc_boot_sexsplit.RData"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source("~/Research/Projects/thesis_tc_pgs_in_AD/scripts/project_functions.R")
+source("~/PhD_milestones/PhD thesis/figures/plot_parameters_for_thesis.R")
+```
+
+## Data
+
+### PREVENT-AD
+
+**Range list**
+```{r}
+my.range.list <- read.within.project.h(my.range.list.file)
+my.range.list$SCORE <- paste("SCORE", my.range.list$label, sep = "")
+```
+
+**Statin stratified data**
+```{r}
+all <- read.within.project.h(statin.all.file, header = TRUE) %>%
+    mutate(pop = "All")
+neg <- read.within.project.h(statin.n.file)  %>%
+    mutate(pop = "Statin neg")
+pos <- read.within.project.h(statin.p.file) %>%
+    mutate(pop = "Statin pos")
+
+statinsplit <- rbind.data.frame(all, neg, pos) %>%
+    merge.data.frame(my.range.list) %>%
+    separate(label, c("temp", "xaxis"), convert = TRUE, sep = 1) %>%
+    mutate(strata = "statin", 
+           cohort = "PREVENT-AD")
+head(statinsplit)
+```
+
+**Sex stratified data**
+```{r}
+sf <- read.within.project.h(sex.all.file) %>%
+    mutate(pop = "All statin-free")
+f <- read.within.project.h(sex.f.file) %>%
+    mutate(pop = "Female")
+m <- read.within.project.h(sex.m.file) %>%
+    mutate(pop = "Male")
+
+sexsplit <- rbind.data.frame(sf, f, m) %>%
+    merge.data.frame(my.range.list) %>%
+    separate(label, c("temp", "xaxis"), convert = TRUE, sep = 1) %>%
+    mutate(strata = "sex", 
+           cohort = "PREVENT-AD")
+head(sexsplit)
+```
+
+### ADNI data
+```{r}
+load(paste(path.to.project, adni.statin.data, sep = ""), verbose = TRUE)
+adni.statin <- m2 %>%
+    separate(label, c("temp", "xaxis"), convert = TRUE, sep = 1) %>%
+    mutate(strata = "statin",
+           cohort = "ADNI")
+rm(m2)
+
+load(paste(path.to.project, adni.sex.data, sep = ""), verbose = TRUE)
+adni.sex <- m2 %>%
+    separate(label, c("temp", "xaxis"), convert = TRUE, sep = 1) %>%
+    mutate(strata = "sex", 
+           cohort = "ADNI")
+adni.sex[adni.sex == "all"] <- "All statin-free"
+rm(m2)
+
+adni <- rbind.data.frame(adni.statin, adni.sex)
+head(adni)
+```
+
+### Merged data
+```{r}
+m <- rbind.data.frame(statinsplit, sexsplit) %>%
+    rbind.data.frame(adni.statin) %>%
+    rbind.data.frame(adni.sex)
+m$strata <- factor(m$strata, levels = c("statin", "sex"), 
+                   labels = c("Statin use stratification", "Sex stratification in statin-free individuals"))
+m[m == "Statin_neg"] <- "Statin neg"
+m[m == "Statin_pos"] <- "Statin pos"
+m[m == "all"] <- "All"
+
+m$cohort <- factor(m$cohort, levels = c("PREVENT-AD", "ADNI"))
+```
+
+## Plotting
+```{r, fig.height=6}
+p <- ggplot(m, aes(x = xaxis, y = Original.value.R2, group = pop)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+    geom_ribbon(aes(ymin = Original.value.R2 - SD.value.R2, 
+                    ymax = Original.value.R2 + SD.value.R2), 
+                alpha = 0.07, 
+                linetype = 0) +
+    geom_line() +
+    geom_point(aes(fill = -log10(Original.value.P), color = -log10(Original.value.P), shape = pop, size = pop)) +
+    facet_grid(cohort~strata) +
+    scale_shape_manual(values=c(23,24,23,22,24,25))+
+    scale_fill_viridis_c(option = "E", direction = -1) +
+    scale_color_viridis_c(option = "E", direction = -1) +
+    scale_size_manual(values=c(4, 4, 2.5, 2.5, 2.5, 2.5))+
+    scale_x_continuous(breaks = unique(m$xaxis), 
+                       labels = as.character(unique(m$pmax))) +
+    labs(y = "Additional R2 explained by TC-PGS", 
+         x = "p-value cut-off") +
+    my.theme.bar +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+p
+```
+
+```{r}
+ggsave("pvalue_thresholding.pdf", plot = p, width = 6.5, height = 6)
+```
+

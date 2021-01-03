@@ -1,0 +1,57 @@
+---
+title: "Log of 'prad_descriptives'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+```{r}
+prad.file <- "data/preventad/prad_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data 
+```{r}
+prad <- read.within.project.h(prad.file)
+summary(prad)
+```
+
+## Descriptives
+```{r}
+prad$statin.n <- as.numeric(prad$statin) - 1
+prad$apoe4.status.n <- as.numeric(prad$apoe4.status) - 1
+
+prad.desc <- sum.stat(prad, "sex", c("tc.age", "tc.mM", "csf.age", "csf.ab42", "csf.ab40", "csf.tau", "csf.ptau", "petab", "pettau.etx", "tc.pgs", "petab.age", "pettau.age"), c("statin.n", "apoe4.status.n"))
+prad.desc
+```
+
+```{r}
+prad.desc[, 3:7] <- round(prad.desc[, 3:7], 2)
+prad.desc
+```
+

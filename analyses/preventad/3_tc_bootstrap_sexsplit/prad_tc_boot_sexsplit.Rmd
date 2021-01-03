@@ -1,0 +1,181 @@
+---
+title: "Bootstrap TC ~ TC pgs in PRAD: stratified for sex"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 4.5
+    fig_width: 11
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+Score files, relative to project directory: 
+```{r}
+score.files <- "analyses/preventad/1_pg_scoring/score_files/" # folder with score files
+score.range <- "analyses/preventad/1_pg_scoring/scoring_range.txt" # scoring range file
+```
+
+Phenotype data, relative to project directory:
+```{r}
+pheno.file <- "analyses/preventad/2_tc_bootstrap_statinsplit/prad_tc_boot_data.txt"
+
+dep.var <- "tc.mM" # colname of dependent variable
+covars <- c("age", "age2", "apoe4.status") # character vector with colnames of covariates
+int.var <- "sex" # variable to split on
+```
+
+Analysis parameters:
+```{r}
+n.pcs <- 10 # number of genetic principal components to include as covariates
+n.bootstrap <- 5000
+```
+
+Output parameters:
+```{r}
+output.name.org <- "prad_tc_boot_sexsplit"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(rcompanion)
+library(boot)
+library(data.table)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+Data is the same as for the statin split, but adding filter for statin use (excluding statin users):
+```{r}
+pheno <- read.within.project.h(pheno.file) %>%
+    rename(IID = iid) %>%
+    filter(statin == "Statin_neg")
+head(pheno)
+
+pcs <- paste("PC", 1:n.pcs, sep = "")
+```
+
+**Summary statistics**
+Discrete variables are presented as percentages and continuous variables as means. Difference in continuous and discrete variables between strata is assessed by Welch t-test and chi-squared test, respectively.
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- pheno
+m.dt$apoe4.status <- as.numeric(m.dt$apoe4.status) - 1
+
+desc.stat <- sum.stat(m.dt, strat_by = int.var, 
+         cont_variables = c("age", "tc.mM"), 
+         disc_variables = c("apoe4.status"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+## PG scoring
+Strata levels:
+```{r}
+str.1 <- levels(pheno[, int.var])[1]
+str.2 <- levels(pheno[, int.var])[2]
+```
+
+```{r}
+# New complete paths ####
+score.files <- paste(path.to.project, score.files, sep = "/")
+score.range <- paste(path.to.project, score.range, sep = "/")
+
+output.dir      <- paste(path.to.project, path.to.wd, sep = "")
+
+my.ls1 <- c(ls(), "my.ls1")
+my.ls1
+```
+
+**All subjects**
+```{r}
+m.cc <- pheno
+output.name <- output.name.org
+covars <- c(covars, int.var)
+
+source(paste(path.to.project, "scripts/lm_boot_forRmd.R", sep = ""))
+```
+
+**`r str.1` subjects**
+```{r}
+ls2 <- ls()
+rm(list = ls2[!ls2 %in% my.ls1])
+
+m.cc <- filter(pheno, (!!as.symbol(int.var)) == str.1)
+output.name <- paste(output.name.org, str.1, sep = "_")
+covars <- covars[!grepl(int.var, covars)]
+
+source(paste(path.to.project, "scripts/lm_boot_forRmd.R", sep = ""))
+```
+
+**`r str.2` subjects**
+```{r}
+ls2 <- ls()
+rm(list = ls2[!ls2 %in% my.ls1])
+
+m.cc <- filter(pheno, (!!as.symbol(int.var)) == str.2)
+output.name <- paste(output.name.org, str.2, sep = "_")
+covars <- covars[!grepl(int.var, covars)]
+
+source(paste(path.to.project, "scripts/lm_boot_forRmd.R", sep = ""))
+```
+
+**Number of SNPs per score**
+```{r}
+n.snps <- select(m.cc, contains("CNTS")) %>%
+    unique() %>%
+    `row.names<-`("n.alleles") %>%
+    t() %>%
+    as.data.frame(optional = TRUE) %>%
+    rownames_to_column() %>%
+    separate(rowname, c("throw", "label"), sep = -3) %>%
+    mutate(n.snps = n.alleles/2) %>%
+    merge.data.frame(my.range.list)
+
+n.snps
+```
+
+## Results plotted
+```{r fig1, echo=FALSE}
+all <- read.table(paste(output.name.org, "Results.txt", sep = "_"), header = TRUE) %>%
+  mutate(pop = "all")
+neg <- read.table(paste(output.name.org, str.1, "Results.txt", sep = "_"), header = TRUE)  %>%
+  mutate(pop = str.1)
+pos <- read.table(paste(output.name.org, str.2, "Results.txt", sep = "_"), header = TRUE) %>%
+  mutate(pop = str.2)
+
+m2 <- rbind.data.frame(all, neg, pos) %>%
+  merge.data.frame(my.range.list)
+
+ggplot(m2, aes(x = factor(pmax), y = Original.value.R2, color = -log10(Original.value.P))) +
+    geom_point(size = 3, shape = 18) +
+    geom_errorbar(aes(ymin = Original.value.R2 - SD.value.R2, ymax = Original.value.R2 + SD.value.R2), 
+                  width = 0.3, size = 1) +
+    labs(title = paste(dep.var, "~ TC-PGS"), 
+         caption = paste("corrected for:", paste(c(paste("PC1-", n.pcs, sep = ""), covars, "and", int.var, "for the 'all' group"), collapse = ", "), "\nerror bars indicate SD"), 
+         y = "Additional R2 explained by PGS", 
+         x = "P cut-off") +
+    scale_color_viridis_c(name = "-log10(p)", 
+                          option = "E", direction = 1) +
+    my.theme +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), 
+          legend.position = "right") +
+    facet_grid(~pop)
+```

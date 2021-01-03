@@ -1,0 +1,236 @@
+---
+title: "Log of 'adni_summary_data.txt'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+Cleaned data: 
+```{r input}
+demog.file <- "extracted_from_rawdata/adni_demog_data.txt"
+statin.file <- "extracted_from_rawdata/adni_statin_data.txt"
+tc.file <- "extracted_from_rawdata/adni_tc_data.txt"
+csf.file <- "extracted_from_rawdata/adni_csf_data.txt"
+dx.file <- "extracted_from_rawdata/adni_dx_data.txt"
+fh.file <- "extracted_from_rawdata/adni_fh_data.txt"
+smoke.file <- "extracted_from_rawdata/adni_smoking_data.txt"
+```
+
+TC-PGS data (p-value cut-off 1e-6):
+```{r}
+pgs.file <- "analyses/adni/v2_prad_snps/1_pg_scoring/score_files/adni_tc_pgs.S09.profile"
+```
+
+Genetic PC data from outside project:
+```{r}
+pca.file <- "~/Research/Cohort_data/ADNI/Genetic_data/ADNI/ADNI_EUR_PCAv3/ADNI_EUR_v3_PCs.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Data
+The PC file contains the individuals with genetic data that can be scored (PGS) and are thus the starting point for this cohort. 
+
+#### Genetic PC data
+```{r}
+pca <- read.table(pca.file, header = TRUE)
+head(pca)
+summary(pca)
+```
+
+#### TC-PGS data
+```{r}
+pgs <- read.table(paste(path.to.project, pgs.file, sep = ""), header = TRUE)
+summary(pgs)
+
+
+```
+Due to missingness of data, this score contains betweem `r min(pgs$CNT)/2` and `r max(pgs$CNT)/2` SNPs.
+
+**Standardize score**
+```{r}
+pgs$tc.pgs <- scale(pgs$SCORE)
+
+pgs.cl <- select(pgs, IID, tc.pgs)
+```
+
+#### Demographic data
+```{r}
+demog <- read.table(demog.file, header = TRUE)
+summary(demog)
+sum(duplicated(demog$IID))
+```
+
+#### Statin data
+```{r}
+statin <- read.table(statin.file, header = TRUE, sep = "\t")
+summary(statin)
+
+statin.bl <- select(statin, IID, statin.sc.date, statin.sc, statin.bl.date, statin.bl, statin.everuse) %>%
+    unique()
+```
+
+#### TC data
+```{r}
+tc <- read.table(tc.file, header = TRUE, sep = "\t")
+summary(tc)
+
+tc.sc <- filter(tc, VISCODE2 == "sc") %>%
+    select(IID, tc.date, tc.mM) %>%
+    unique()
+sum(duplicated(tc.sc$IID))
+```
+
+There are multiple values for individuals at the same visit. These will be averaged.
+```{r}
+tc.sc.g <- group_by(tc.sc, IID) %>%
+    summarise(sc.tc.mM = mean(tc.mM)) %>%
+    merge.data.frame(select(tc.sc, IID, tc.date)) %>%
+    select(IID, tc.date, sc.tc.mM) %>%
+    unique()
+sum(duplicated(tc.sc.g$IID))
+```
+
+#### CSF data
+```{r}
+csf <- read.table(csf.file, header = TRUE)
+head(csf)
+
+csf.age <- merge.data.frame(csf, select(demog, IID, dob)) %>%
+    mutate(age = as.numeric(as.Date(EXAMDATE) - as.Date(dob))/365.25)
+
+csf.bl <- filter(csf.age, VISCODE2 == "bl") %>%
+    select(IID, csf.bl.age = age, contains("bl"))
+csf.lv <- filter(csf.age, csf.time == lv.csf.time) %>%
+    select(IID, lv.csf.age = age, lv.csf = lv, lv.csf.tau, lv.csf.ptau, lv.csf.ab42)
+```
+
+#### Disease data
+```{r}
+dx <- read.table(dx.file, header = TRUE)
+head(dx)
+
+dx.f <- dx %>% 
+    merge.data.frame(select(demog, IID, dob)) %>%
+    mutate(age = as.numeric(as.Date(EXAMDATE) - as.Date(dob))/365.25)
+
+dx.bl <- filter(dx.f, VISCODE2 == "bl") %>%
+    select(IID, bl.age = age, bl.dx, bl.ad = ad.bin, bl.ci = ci.bin)
+dx.lv <- filter(dx.f, lv.dx.time == dx.time) %>%
+    select(IID, lv.age = age, lv.dx.time, lv.dx, lv.ad = ad.bin, lv.ci = ci.bin) %>%
+    unique()
+dx.conv <- select(dx, IID, contains("conv")) %>%
+    unique()
+```
+
+#### AD family history data
+```{r}
+fh <- read.table(fh.file, header = TRUE)
+head(fh)
+```
+
+#### Smoking data
+```{r}
+smoke <- read.table(smoke.file, header = TRUE)
+head(smoke)
+```
+
+#### Merge data
+```{r}
+my.merge <- function(x,y) {
+    merge.data.frame(x, y, by = "IID", all.x = TRUE)
+}
+
+m <- Reduce(my.merge, list(pca, pgs.cl, demog, fh, statin.bl, smoke, tc.sc.g, dx.bl, dx.lv, dx.conv, csf.bl, csf.lv)) %>%
+    unique()
+```
+
+**Duplicated values**
+```{r}
+sum(duplicated(m$IID))
+summary(m)
+```
+
+```{r}
+filter(m, IID == "031_S_0830")
+```
+
+Individual 031_S_0830 have two values for last visit age (lv.age) but they are fairly similar (75.90 vs 75.89). Thus, the mean of these two will be used. 
+```{r}
+m.g <- group_by(m, IID) %>%
+    summarise(lv.age = mean(lv.age)) %>%
+    merge.data.frame(select(m, - lv.age)) %>%
+    unique()
+filter(m.g, IID == "031_S_0830") %>% select(IID, lv.age)
+```
+
+## New variables
+
+#### ATN status
+ATN status is determined based on Hansson et al., 2018 (Alz & Dem) with a amyloid positive status defined as a p-tau/AB42 ratio >= 0.028
+
+```{r}
+m.g$bl.ptau.ab42 <- m.g$bl.csf.ptau/m.g$bl.csf.ab42
+m.g$bl.atn.a <- as.numeric(m.g$bl.ptau.ab42 >= 0.028)
+
+m.g$lv.ptau.ab42 <- m.g$lv.csf.ptau/m.g$lv.csf.ab42
+m.g$lv.atn.a <- as.numeric(m.g$lv.ptau.ab42 >= 0.028)
+```
+
+#### Age at tc and statin
+```{r}
+m.g$tc.age <- as.numeric(as.Date(m.g$tc.date) - as.Date(m.g$dob))/365.25
+m.g$statin.sc.age <- as.numeric(as.Date(m.g$statin.sc.date) - as.Date(m.g$dob))/365.25
+m.g$statin.bl.age <- as.numeric(as.Date(m.g$statin.bl.date) - as.Date(m.g$dob))/365.25
+```
+
+#### Statin bl/sc combined 
+```{r}
+m.g$statin.sc.bl <- apply(m.g[, c("statin.sc", "statin.bl")], 1, function(x) {
+    if(is.na(x[1])) {x[2]}
+    else {x[1]}
+})
+sum(m.g$statin.sc.bl, na.rm = TRUE)
+sum(m.g$statin.bl, na.rm = TRUE)
+sum(m.g$statin.sc, na.rm = TRUE)
+```
+
+## Final data
+```{r}
+m.final <- select(m.g, 
+                  fid = FID, iid = IID, tc.pgs, sex.f = SEX_F, education = EDUCATION, apoe.geno, apoe4.status, fh.ad,
+                  sc.smoking, contains("statin"), contains("tc"),
+                  bl.age, bl.dx, bl.ad, bl.ci, contains("bl.csf"), bl.atn.a, 
+                  lv.age, lv.dx, lv.ad, lv.ci, contains("lv.csf"), lv.atn.a, 
+                  contains("conv"),
+                  PC1:PC10)
+summary(m.final)
+```
+
+## Write data
+```{r}
+write.table(m.final, file = "adni_summary_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```

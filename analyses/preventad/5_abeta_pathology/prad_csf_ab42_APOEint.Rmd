@@ -1,0 +1,173 @@
+---
+title: "CSF amyloid beta pathology at baseline ~ TC pgs in PRAD"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 3
+    fig_width: 6.5
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Notes
+Findings from rs72633963 and rs3846662 analyses suggest interaction with APOE-e4 status and results from Kobe et al., 2020, suggest that cholesterol only associate with amyloid pathology in individuals not on vascular medication. Thus we wanted to see whether the TC-PGS would interact with APOE-e4 status in statin free individuals. 
+
+## Input
+Relative to project base directory:
+```{r}
+pheno.file <- "data/preventad/prad_summary_data.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(gridExtra)
+
+source(paste(path.to.project, "scripts/project_functions.R", sep = ""))
+```
+
+## Data
+```{r}
+pheno <- read.within.project.h(pheno.file)
+summary(pheno)
+```
+
+### Cleaning data
+```{r}
+csf <- filter(pheno, !is.na(csf.ab42)) %>%
+    select(iid, PC1:PC10, sex, apoe4.status, statin, tc.mM, csf.age, csf.ab42, tc.pgs)
+
+csf$sex <- factor(csf$sex, levels = c("Male", "Female"))
+```
+
+**Missing data**
+```{r}
+apply(csf, 2, function(x) sum(is.na(x)))
+```
+
+Data is missing for APOE4 status and for TC levels, each for one individual. Excluding individual with no APOE4 status since this variable will be incliuded as a covariate, and keeping individual with no TC data because this will only be used for descriptives. 
+```{r}
+csf.cc <- filter(csf, !is.na(apoe4.status))
+```
+
+
+## Descriptives
+```{r}
+# converting binary factors to numeric (0 or 1)
+m.dt <- csf.cc
+m.dt$apoe4.status <- as.numeric(m.dt$apoe4.status) - 1
+
+# descriptives
+desc.stat <- sum.stat(m.dt, strat_by = "sex", 
+         cont_variables = c("csf.age", "tc.mM", "tc.pgs", "csf.ab42"), 
+         disc_variables = c("apoe4.status"))
+desc.stat[, " "] <- sapply(desc.stat$p, function(x) if(x <= 0.05) {"*"} else {""})
+desc.stat
+```
+
+Males and females vary only with regards to TC levels, female having higher levels. 
+
+## EDA
+
+**Score distribution**
+```{r, fig.height=9}
+grid.arrange(
+    ggplot(csf.cc, aes(tc.pgs)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(tc.pgs, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ggplot(csf.cc, aes(csf.ab42)) + 
+        geom_histogram(data = filter(csf.cc, sex == "Female"), bins = 10, fill = "#f5dd4dff") +
+        geom_histogram(data = filter(csf.cc, sex == "Male"), bins = 10, fill = "#1f3c6dff") +
+        my.theme, 
+    
+    ggplot(csf.cc, aes(csf.ab42, fill = sex)) +
+        geom_density(alpha = 0.5) +
+        scale_fill_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme,
+    
+    ncol = 2
+)
+```
+
+## TC pgs effect on CSF data
+
+### Linear regression - All individuals
+
+**Statistics**
+```{r}
+formula.1 <- as.formula("csf.ab42 ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + csf.age + sex + apoe4.status * tc.pgs")
+linreg.1 <- lm(formula.1, data = csf.cc)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.1)
+```
+
+Results:
+```{r}
+summary(linreg.1)
+```
+
+**Plotting**
+```{r, echo=FALSE, fig.width=3.25}
+ggplot(csf.cc, aes_string(x = "tc.pgs", y = "csf.ab42", color = "apoe4.status")) +
+        geom_point(size = 3) +
+        geom_smooth(method = "lm", se = FALSE) +
+        scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme
+```
+
+### Linear regression - Statin free individuals
+
+```{r}
+csf.statinfree <- filter(csf, statin == "Statin_neg")
+```
+
+**Statistics**
+```{r}
+formula.2 <- as.formula("csf.ab42 ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + csf.age + sex + apoe4.status * tc.pgs")
+linreg.2 <- lm(formula.2, data = csf.statinfree)
+```
+
+Assumptions:
+```{r, fig.height=6}
+par(mfrow = c(2, 2))
+plot(linreg.2)
+```
+
+Results:
+```{r}
+summary(linreg.2)
+```
+
+**Plotting**
+```{r, echo=FALSE, fig.width=3.25}
+ggplot(csf.statinfree, aes_string(x = "tc.pgs", y = "csf.ab42", color = "apoe4.status")) +
+        geom_point(size = 3) +
+        geom_smooth(method = "lm", se = FALSE) +
+        scale_color_manual(values = c("#1f3c6dff", "#f5dd4dff")) +
+        my.theme
+```

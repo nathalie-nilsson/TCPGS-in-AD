@@ -1,0 +1,82 @@
+---
+title: "Log of 'prad_pet_data.txt'" 
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+PET data were supplied by Sylvia Villeneuve's lab. 
+
+### Raw data files
+```{r}
+pet.file <- "~/Research/Cohort_data/ADPREVENT/Patient_data/from_sv_lab/Amyloid_tau_PET_Nathalie.xlsx"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(openxlsx)
+```
+
+## Read & clean data
+```{r}
+colnames(read.xlsx(pet.file, rows = c(1, 3:396), detectDates = TRUE))
+
+pet <- read.xlsx(pet.file, rows = c(1, 3:396), detectDates = TRUE) %>%
+    select(iid = PSCID, 
+           visit = Label_PET_visit, 
+           petab.date = Date_AmyloidPET_visit, 
+           petab = Global_Amyloid_n129, 
+           pettau.date = Date_TauPET_visit,
+           pettau.etx = tau_ctx_mean_entorhinal_n129, 
+           pettau.meta = tau_metaROI_RikOssenkoppele, 
+           pettau.pos = Tau_positive_entorh_VilleneuveLab_n129)
+summary(pet)
+
+unique(pet$visit) 
+```
+
+Filter data to only contain IDs with either petab or pettau data
+```{r}
+pet$pet.data <- apply(pet[, c("petab", "pettau.etx")], 1, function(x) {
+    if(!is.na(x[1]) | !is.na(x[2])) {1}
+    else {0}
+})
+
+pet.f <- filter(pet, pet.data == 1)
+```
+
+**Check duplicated ids**
+```{r}
+sum(duplicated(pet.f$iid))
+```
+
+There is **`r nrow(pet.f)`** individuals with at least one PET visit (these do not correspond to visit labels baseline).
+
+## Write data
+```{r}
+write.table(pet.f, file = "prad_pet_data.txt", 
+            quote = FALSE, row.names = FALSE, sep = "\t")
+```
+

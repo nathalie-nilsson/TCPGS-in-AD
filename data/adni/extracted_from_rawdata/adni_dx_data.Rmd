@@ -1,0 +1,236 @@
+---
+title: 'ADNI: Disease status data'
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+Collected from: `r raw.dir`
+
+### Raw data files
+```{r, echo=FALSE}
+key.file <- "ROSTER.csv"
+raw.pheno.file <- "DXSUM_PDXCONV_ADNIALL.csv"
+```
+* `r raw.pheno.file`
+* `r key.file`
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+## Inspect raw data
+Columns in `r raw.pheno.file`:
+```{r, echo=FALSE}
+colnames(read.csv(paste(raw.dir, raw.pheno.file, sep = "")))
+```
+
+Columns in `r key.file`:
+```{r, echo=FALSE}
+colnames(read.csv(paste(raw.dir, key.file, sep = "")))
+```
+
+## Read, merge & select data:
+
+#### Raw disease data
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = "")) %>%
+    select(RID, IID = PTID)
+head(key)
+
+rawdata <- read.csv(paste(raw.dir, raw.pheno.file, sep = "")) %>%
+    merge.data.frame(key) %>%
+    select(RID, IID, VISCODE2, EXAMDATE, DXCHANGE, DXCURREN) %>%
+    unique() 
+head(rawdata)
+```
+
+Unique labels in "VISCODE2":
+```{r}
+unique(rawdata$VISCODE2)
+```
+
+#### Clean up of data
+To create a numeric time variable, "sc" and "uns1" in "VISCODE2" are replaced with NAs and "bl" with 0 - this will be the **"dx.time"**, variable.
+```{r}
+cleaned.data <- rawdata %>%
+    mutate(VISCODE.rm1 = gsub("bl", 0, VISCODE2), 
+           VISCODE.rm2 = gsub("sc", NA, VISCODE.rm1),
+           VISCODE.rm3 = gsub("uns1", NA, VISCODE.rm2),
+           dx.time = as.numeric(gsub("m", "", VISCODE.rm3))) %>% 
+    select(RID, IID, VISCODE2, dx.time, EXAMDATE, DXCHANGE, DXCURREN)
+head(cleaned.data)
+```
+
+**No of unique IDs:**
+```{r, echo=FALSE}
+length(unique(cleaned.data$IID))
+```
+
+**dx variable**
+Currently disease information is located in two columns: "DXCHANGE" & "DXCURREN" and neither seem to be complete. Thus, data from both columns will be combined into a new variable **dx** and converted to a format where 1 = Control, 2 = MCI, and 3 = AD.
+```{r}
+# Combine columns
+cleaned.data$dx <- apply(cleaned.data[, c("DXCHANGE", "DXCURREN")], 1, function(x) 
+    if(!is.na(x[2])) {x[2]}
+    else if(is.na(x[2] & !is.na(x[1]))) {x[1]}
+    else {NA})
+
+# Replace conversion # with status # ####
+cleaned.data$dx[cleaned.data$dx == 7 | cleaned.data$dx == 9] <- 1
+cleaned.data$dx[cleaned.data$dx == 4 | cleaned.data$dx == 8] <- 2
+cleaned.data$dx[cleaned.data$dx == 5 | cleaned.data$dx == 6] <- 3
+```
+
+#### Baseline data 
+```{r}
+dx.bl <- filter(cleaned.data, dx.time == 0) %>%
+    select(IID, bl.dx = dx) %>%
+    unique()
+
+# check for duplicates
+sum(duplicated(dx.bl$IID))
+```
+
+#### Last visit data
+```{r}
+# Last dx visit ####
+dx.lv <- filter(cleaned.data, !is.na(dx)) %>% 
+    group_by(IID) %>%
+    summarise(lv.dx.time = max(dx.time, na.rm = TRUE)) %>%
+    unique()
+
+# Last dx status ####
+dx.lvstatus <- merge.data.frame(cleaned.data, dx.lv) %>%
+    filter(dx.time == lv.dx.time) %>%
+    select(IID, lv.dx = dx, lv = VISCODE2, lv.dx.time) %>%
+    unique()
+
+# Check for duplicates
+duplicated(dx.lvstatus$IID) %>% sum()
+```
+
+#### Status change
+** Function to determine if status have changed over time **
+```{r}
+f_reversion <- function(y) {
+    noNA <- as.integer(y[which(!is.na(y))])
+    conv.rev <- diff(noNA)
+    rev <- sum(conv.rev < 0)
+    conv <- sum(conv.rev > 0)
+    if (conv == 0 & rev == 0) {
+        "No"
+    } else if (conv != 0 & rev == 0) {
+        "Conv"
+    } else if (conv == 0 & rev != 0) {
+        "Rev"
+    } else if (conv != 0 & rev != 0) {
+        "Conv/Rev"
+    }
+}
+```
+
+** Adding column indicating whether reversion/conversion has occurred **
+```{r}
+dx.w <- cleaned.data %>%
+    filter(!is.na(dx.time)) %>%
+    mutate(KEY = paste("m", dx.time, sep = "_")) %>%
+    select(IID, KEY, dx) %>%
+    unique() %>%
+    spread(KEY, value = dx) %>%
+    select(IID, m_0, m_6, m_12, m_18, m_24, m_36, m_48, m_60, m_72, m_84, m_96, m_108, m_120)
+
+dx.w$dx.change <- apply(dx.w[, 2:ncol(dx.w)], 1, f_reversion)
+```
+
+#### Conversion data for Kaplan-Meier analyses
+```{r}
+# function to find visit where change was recorded
+conv.visit.f <- function(x, conversion.value) {
+    if(sum(x %in% conversion.value, na.rm = TRUE) == 0) {names(x)[max(which(!is.na(x)))]}
+    else { names(x)[min(which(x %in% conversion.value))]}
+}
+```
+
+**CI conversion**
+Conversion to MCI/AD
+```{r}
+dx.w$ci.conv.time <- apply(select(dx.w, m_0:m_120), 1, function(y) {
+    gsub("m_", "", conv.visit.f(y, c(2, 3))) %>%
+        as.character() %>%
+        as.numeric()
+    })
+dx.w$ci.conv <- apply(select(dx.w, m_0:m_120), 1, function(z) {
+    as.numeric(sum(z %in% c(2, 3), na.rm = TRUE) > 0) 
+})
+```
+
+**AD conversion**
+Conversion to MCI/AD
+```{r}
+dx.w$ad.conv.time <- apply(select(dx.w, m_0:m_120), 1, function(y) {
+    gsub("m_", "", conv.visit.f(y, 3)) %>%
+        as.character() %>%
+        as.numeric()
+    })
+dx.w$ad.conv <- apply(select(dx.w, m_0:m_120), 1, function(z) {
+    as.numeric(sum(z %in% 3, na.rm = TRUE) > 0) 
+})
+```
+
+#### Merge data
+```{r}
+dx.m <- select(cleaned.data, IID, VISCODE2, dx.time, EXAMDATE, dx) %>%
+    merge.data.frame(dx.bl) %>%
+    merge.data.frame(dx.lvstatus) %>%
+    merge.data.frame(select(dx.w, IID, dx.change, contains("conv")))
+head(dx.m)
+```
+
+#### Binary status, reversion cases excluded
+```{r}
+dx.m$ad.bin <- apply(dx.m[, c("dx", "dx.change")], 1, function(x) 
+    if(grepl("Rev", x[2]) | is.na(x[1])) {NA}
+    else {as.numeric(x[1]) - 1})
+dx.m$ad.bin[dx.m$ad.bin == 1] <- NA
+dx.m$ad.bin[dx.m$ad.bin == 2] <- 1
+
+dx.m$ci.bin <- apply(dx.m[, c("dx", "dx.change")], 1, function(x) 
+    if(grepl("Rev", x[2]) | is.na(x[1])) {NA}
+    else {as.numeric(x[1]) - 1})
+dx.m$ci.bin[dx.m$ci.bin == 2] <- 1
+
+summary(dx.m)
+```
+
+## Write data
+```{r}
+write.table(dx.m, file = "adni_dx_data.txt", row.names = FALSE, quote = FALSE, sep = "\t")
+```
+

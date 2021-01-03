@@ -1,0 +1,147 @@
+---
+title: "Log of 'adni_demog_data'"
+subtitle: "Project: thesis_tc_pgs_in_AD"
+author: "Nathalie Nilsson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    df_print: kable
+    fig_height: 5.2
+    fig_width: 6.1
+    theme: paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.wd <- gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+**Location of project directory:** `r path.to.project`
+
+**Working directory relative to project:** `r path.to.wd`
+
+## Input
+
+### Raw data source
+Raw data was downloaded from http://adni.loni.usc.edu/ 2015-12-03 unless otherwise stated.
+```{r, echo=FALSE}
+raw.dir <- "~/Research/Cohort_data/ADNI/Phenotypic_data/Raw_data/2015-12-03/" 
+```
+`r raw.dir`
+
+### Raw data files
+```{r input}
+key.file <- "ROSTER.csv"
+demog.file <- "PTDEMOG.csv"
+apoe.file <- "APOERES.csv"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+```
+
+```{r}
+key <- read.csv(paste(raw.dir, key.file, sep = ""), header = TRUE) %>%
+    select(RID, IID = PTID)
+head(key)
+
+demog <- read.csv(paste(raw.dir, demog.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key)
+head(demog)
+
+apoe <- read.csv(paste(raw.dir, apoe.file, sep = ""), header = TRUE) %>%
+    merge.data.frame(key)
+head(apoe)
+```
+
+## Demographic data
+
+#### Sex
+```{r}
+demog[demog == -5 | demog == -4] <- NA
+
+sex <- demog %>%
+    mutate(SEX_F = PTGENDER - 1) %>%
+    select(IID, SEX_F) %>%
+    filter(!is.na(SEX_F)) %>%
+    unique()
+nrow(sex)
+```
+
+#### Date of birth
+
+Raw data only contains year and month, thus, will put day as the 1st for all indiviuals.
+```{r}
+dob <- demog %>%
+    mutate(dob = as.Date(paste(PTDOBYY, PTDOBMM, "01", sep = "-"))) %>%
+    filter(!is.na(dob)) %>%
+    select(IID, dob) %>%
+    unique()
+nrow(dob)
+summary(dob)
+```
+
+#### Education
+```{r}
+edu <- demog %>%
+    mutate(EDUCATION = PTEDUCAT) %>%
+    select(IID, EDUCATION) %>%
+    filter(!is.na(EDUCATION)) %>%
+    unique()
+nrow(edu)
+```
+
+## APOE data
+```{r}
+apoe.cl <- apoe %>%
+    mutate(apoe.geno = paste(APGEN1, APGEN2, sep = ":"), 
+           apoe4.status = as.numeric(grepl("4", apoe.geno))) %>%
+    select(IID, apoe.geno, apoe4.status) %>%
+    filter(!is.na(apoe.geno)) %>%
+    unique()
+head(apoe.cl)
+```
+
+## Merge data
+```{r}
+m <- Reduce(function(x, y) merge(x, y, all = TRUE), list(sex, dob, edu, apoe.cl)) %>%
+    filter(!is.na(IID)) %>%
+    unique()
+head(m)
+```
+
+#### Check duplicate IIDs
+```{r}
+length(unique(m$IID)) == nrow(m)
+
+dup.iids <- m$IID[duplicated(m$IID)]
+filter(m, IID %in% dup.iids)
+```
+
+Duplicated IIDs are due to differing years of education. Replace with the mean of the two values:
+```{r}
+m.dup <- filter(m, IID %in% dup.iids) %>%
+    group_by(IID) %>%
+    summarise(mean.edu = mean(EDUCATION))
+
+m[m$IID == m.dup$IID[1], "EDUCATION"] <- m.dup$mean.edu[1]
+m[m$IID == m.dup$IID[2], "EDUCATION"] <- m.dup$mean.edu[2]
+m[m$IID == m.dup$IID[3], "EDUCATION"] <- m.dup$mean.edu[3]
+m[m$IID == m.dup$IID[4], "EDUCATION"] <- m.dup$mean.edu[4]
+m[m$IID == m.dup$IID[5], "EDUCATION"] <- m.dup$mean.edu[5]
+
+filter(m, IID %in% dup.iids)
+
+m.unique <- unique(m)
+summary(m.unique)
+```
+
+## Write data
+```{r}
+write.table(m.unique, file = "adni_demog_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```

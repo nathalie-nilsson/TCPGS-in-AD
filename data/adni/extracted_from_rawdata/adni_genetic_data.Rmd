@@ -1,0 +1,75 @@
+---
+title: "ADNI PC and PGS data"
+author: "Nathalie Nilsson"
+date: "March 20, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+PGS data (p-value cutoff of p <= 1e-6) and PCA data compiled. 
+
+## Project
+```{r}
+path.to.project <- paste(rprojroot::find_rstudio_root_file(), "/", sep = "")
+path.to.project
+```
+
+## Relevant directories
+
+**Working directory relative to project:**
+```{r, echo=FALSE}
+gsub(rprojroot::find_rstudio_root_file(), "", getwd())
+```
+
+## Input
+```{r}
+# relative to project directory
+score.file <- "pg_scoring/adni/adni_v2/score_files/adni_tc_pgs.S09.profile"
+
+# outside project
+pca.file <- "~/Research/Cohort_data/ADNI_all/Genetic_data/ADNI/ADNI_EUR_PCAv3/ADNI_EUR_v3_PCs.txt"
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(openxlsx)
+```
+
+## Data
+
+#### Score data
+```{r}
+score <- read.table(paste(path.to.project, score.file, sep = ""), 
+                    header = TRUE)
+summary(score)
+```
+There are **`r nrow(score)`** individuals with score data.
+
+#### PC data
+```{r}
+pca <- read.table(pca.file, header = TRUE)
+summary(pca)
+```
+There are **`r nrow(pca)`** individuals with pca data.
+
+#### Merge data
+```{r}
+m <- merge.data.frame(pca, score)
+```
+There are **`r nrow(m)`** individuals with both score and pca data.
+
+## Standardized scores
+```{r}
+m$tc.pgs <- scale(m$SCORE)
+```
+
+## Write data
+```{r}
+write.table(m, file = "adni_genetic_data.txt", 
+            row.names = FALSE, quote = FALSE, sep = "\t")
+```
+
